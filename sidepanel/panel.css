@@ -83,8 +83,8 @@ body {
     radial-gradient(ellipse at bottom right, rgba(6, 182, 212, 0.05) 0%, transparent 50%);
   color: var(--text-secondary);
   min-width: 280px;
-  height: 100vh;
-  overflow: hidden;
+  min-height: 100vh;
+  overflow-y: auto;
   line-height: 1.5;
 }
 
@@ -93,7 +93,7 @@ body {
   display: flex;
   flex-direction: column;
   gap: 16px;
-  height: 100%;
+  min-height: 100vh;
   box-sizing: border-box;
 }
 
@@ -530,21 +530,12 @@ header .subtitle {
   min-width: 0;
 }
 
-/* Expanded help is now a plain in-flow hint. Earlier versions placed
-   .help inside #normal-mode; because flex-shrink:0 combined with the
-   help's natural 200+ px content height, expanding it compressed
-   .input-section and made the action-bar collide with the summary.
-   Moving the section in the markup (now a sibling of .log, outside
-   #normal-mode) sidesteps the whole problem — opening the details
-   pushes only .log/.footer downward, never the input area. */
-.help details[open] {
-  max-height: 260px;
-  overflow-y: auto;
-}
-
-.help details[open] > .help-subtitle:first-of-type {
-  margin-top: 6px;
-}
+/* Expanded help is plain in-flow content. Because .help sits outside
+   #normal-mode (between discussion-mode and .log) and body is now
+   scrollable with .container having min-height: 100vh, expanding the
+   panel naturally grows the page — pushing .log and footer down,
+   never compressing the input area above. No max-height cap; the
+   entire page scrolls when content exceeds viewport height. */
 
 .help summary {
   cursor: pointer;
@@ -654,7 +645,7 @@ header .subtitle {
   display: flex;
   flex-direction: column;
   flex: 1;
-  min-height: 0;
+  min-height: 340px;  /* protect textarea + action-bar from compression when help expands */
   gap: 10px;
 }
 
