@@ -535,16 +535,17 @@ header .subtitle {
   position: relative;
 }
 
-/* Render the expanded help as a popover above the summary, not as an
-   in-flow block. Previously, flex-shrink:0 + a 200+ px natural content
-   height forced .help to eat into .input-section's flex:1 allotment.
-   Because #message-input has min-height:120px, the input section could
-   not shrink enough, its action-bar overflowed into .help's slot, and
-   the send button visually collided with the summary. An absolutely
-   positioned popover leaves the in-flow layout untouched. */
+/* Render the expanded help as a popover DOWN from the summary, not as
+   an in-flow block. Rationale: flex-shrink:0 on .help + 200+ px natural
+   content height was eating .input-section's flex:1 allotment; combined
+   with #message-input's min-height:120px, this made the action-bar
+   overflow into the summary's slot. Upward popover blocked the send
+   button instead. Downward popover overlays the .log region (non-
+   interactive, so short-term occlusion is acceptable) while keeping
+   action-bar and summary fully visible and clickable. */
 .help details[open] > :not(summary) {
   position: absolute;
-  bottom: calc(100% + 6px);
+  top: calc(100% + 6px);
   left: 0;
   right: 0;
   background: var(--bg-card);
