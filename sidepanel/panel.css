@@ -528,40 +528,22 @@ header .subtitle {
   color: var(--text-muted);
   flex-shrink: 0;
   min-width: 0;
-  position: relative;
 }
 
-.help details {
-  position: relative;
-}
-
-/* Render the expanded help as a popover DOWN from the summary, not as
-   an in-flow block. Rationale: flex-shrink:0 on .help + 200+ px natural
-   content height was eating .input-section's flex:1 allotment; combined
-   with #message-input's min-height:120px, this made the action-bar
-   overflow into the summary's slot. Upward popover blocked the send
-   button instead. Downward popover overlays the .log region (non-
-   interactive, so short-term occlusion is acceptable) while keeping
-   action-bar and summary fully visible and clickable. */
-.help details[open] > :not(summary) {
-  position: absolute;
-  top: calc(100% + 6px);
-  left: 0;
-  right: 0;
-  background: var(--bg-elevated);
-  max-height: 280px;
+/* Expanded help is now a plain in-flow hint. Earlier versions placed
+   .help inside #normal-mode; because flex-shrink:0 combined with the
+   help's natural 200+ px content height, expanding it compressed
+   .input-section and made the action-bar collide with the summary.
+   Moving the section in the markup (now a sibling of .log, outside
+   #normal-mode) sidesteps the whole problem — opening the details
+   pushes only .log/.footer downward, never the input area. */
+.help details[open] {
+  max-height: 260px;
   overflow-y: auto;
-  padding: 14px 16px;
-  border: 1px solid var(--accent-secondary);
-  border-radius: 10px;
-  box-shadow: var(--shadow-lg), 0 0 0 3px var(--glow-primary);
-  z-index: 10;
 }
 
-/* First help-subtitle inside the popover shouldn't add top margin — its
-   12 px would otherwise create an off-balance gap at the card's top. */
-.help details[open] > :not(summary) > .help-subtitle:first-child {
-  margin-top: 0;
+.help details[open] > .help-subtitle:first-of-type {
+  margin-top: 6px;
 }
 
 .help summary {
