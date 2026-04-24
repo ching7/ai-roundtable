@@ -50,6 +50,11 @@
         <span class="target-name">Gemini</span>
         <span class="status" id="status-gemini"></span>
       </label>
+      <label class="target-label">
+        <input type="checkbox" id="target-deepseek" checked>
+        <span class="target-name">DeepSeek</span>
+        <span class="status" id="status-deepseek"></span>
+      </label>
     </section>
 
     <section class="input-section">
@@ -73,6 +78,7 @@
           <button class="mention-btn" data-mention="@Claude" title="引用 Claude">@Claude</button>
           <button class="mention-btn" data-mention="@ChatGPT" title="引用 ChatGPT">@ChatGPT</button>
           <button class="mention-btn" data-mention="@Gemini" title="引用 Gemini">@Gemini</button>
+          <button class="mention-btn" data-mention="@DeepSeek" title="引用 DeepSeek">@DeepSeek</button>
         </div>
       </div>
       <textarea
@@ -134,6 +140,10 @@
             <label class="participant-option">
               <input type="checkbox" name="participant" value="gemini">
               <span class="target-name gemini">Gemini</span>
+            </label>
+            <label class="participant-option">
+              <input type="checkbox" name="participant" value="deepseek">
+              <span class="target-name deepseek">DeepSeek</span>
             </label>
           </div>
           <p class="hint">请选择 2 位参与者</p>

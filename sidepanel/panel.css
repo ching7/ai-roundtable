@@ -44,6 +44,7 @@ html {
   --ai-claude: #F97316;           /* Orange */
   --ai-chatgpt: #22C55E;          /* Green */
   --ai-gemini: #3B82F6;           /* Blue */
+  --ai-deepseek: #4D6BFE;         /* DeepSeek Blue */
 
   /* Text Colors */
   --text-primary: #F8FAFC;        /* Slate 50 */
@@ -1111,6 +1112,7 @@ header .subtitle {
 #summary-content .ai-name.claude { color: var(--ai-claude); }
 #summary-content .ai-name.chatgpt { color: var(--ai-chatgpt); }
 #summary-content .ai-name.gemini { color: var(--ai-gemini); }
+#summary-content .ai-name.deepseek { color: var(--ai-deepseek); }
 
 #new-discussion-btn {
   width: 100%;
