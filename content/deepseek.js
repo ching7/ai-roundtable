@@ -118,19 +118,37 @@
     }
 
     // DeepSeek uses <div role="button"> with no aria-label / data-testid.
-    // The send button is the rightmost icon-only button near the bottom
-    // of the viewport (class ds-icon-button ds-icon-button--l, prefixed
-    // with a per-build hash). Pick by geometry, not class hash.
+    // The send button is the rightmost icon-only button on the same row
+    // as the input field. DeepSeek's home screen centers the input in the
+    // middle of the viewport (top ~= 245), so an absolute "near bottom"
+    // rule would miss it. Anchor spatially to the input instead.
+    const inputEl = document.querySelector(
+      'textarea[placeholder*="DeepSeek" i], textarea#chat-input, ' +
+      'textarea[placeholder*="message" i], ' +
+      'div[contenteditable="true"][role="textbox"], ' +
+      'div[contenteditable="true"], textarea'
+    );
+    const anchorMidY = inputEl
+      ? (inputEl.getBoundingClientRect().top + inputEl.getBoundingClientRect().bottom) / 2
+      : null;
+
     const all = document.querySelectorAll('button, [role="button"]');
     let best = null;
     let bestRight = -Infinity;
     for (const el of all) {
       if (!el.querySelector('svg')) continue;
-      if ((el.textContent || '').trim().length > 0) continue;  // skip labeled buttons like 深度思考 / 智能搜索
+      if ((el.textContent || '').trim().length > 0) continue;  // skip 深度思考 / 智能搜索
       if (!isVisible(el)) continue;
       const rect = el.getBoundingClientRect();
       if (rect.width === 0 || rect.height === 0) continue;
-      if (rect.bottom < window.innerHeight - 250) continue;
+      if (anchorMidY !== null) {
+        // Same visual row as input (within ~100 px of its vertical center)
+        const elMidY = (rect.top + rect.bottom) / 2;
+        if (Math.abs(elMidY - anchorMidY) > 100) continue;
+      } else {
+        // Fallback without anchor: just exclude top header icons
+        if (rect.top < 80) continue;
+      }
       if (rect.right > bestRight) {
         best = el;
         bestRight = rect.right;
