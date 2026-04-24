@@ -307,11 +307,32 @@
     }
   }
 
-  // Strip R1 thinking-process blocks from the captured text.
-  // Anchor heuristics: text-based ("已深度思考用时" / "Thought for" / "Thinking..." / "思考"),
-  // and class-based (elements whose class contains "reasoning" or "thinking").
-  // Degradation: if we cannot isolate a clean answer body, return the original text
-  // rather than null — a full capture (thinking + answer) beats losing the response entirely.
+  // Extract answer text as paragraph-separated plaintext.
+  // innerText on a .ds-markdown sometimes collapses block boundaries into a
+  // single run — so lists and sections render as one wall of text downstream.
+  // We instead walk direct children (each <p>/<ul>/<ol>/<h*>/<pre>/<blockquote>
+  // is a paragraph) and join with \n\n, giving the panel's "\n → <br>" pass
+  // enough spacing to match the visual density of Claude/ChatGPT captures.
+  function extractParagraphText(container) {
+    if (!container) return '';
+    const children = container.children;
+    if (children.length === 0) {
+      return (container.innerText || '').trim();
+    }
+    const parts = [];
+    for (const child of children) {
+      const text = (child.innerText || '').trim();
+      if (text) parts.push(text);
+    }
+    if (parts.length === 0) {
+      return (container.innerText || '').trim();
+    }
+    return parts.join('\n\n');
+  }
+
+  // Strip R1 thinking-process blocks and return paragraph-separated text.
+  // Degradation: if stripping produced empty or near-empty text, return the
+  // original text rather than null — a full capture beats losing the response.
   function stripThinkingBlock(container) {
     if (!container) return null;
 
@@ -326,19 +347,17 @@
     const anchors = [/已深度思考用时/, /思考完成/, /Thought for /i, /Thinking\.\.\./i];
     const allEls = clone.querySelectorAll('*');
     for (const el of allEls) {
-      const text = (el.textContent || '').slice(0, 200); // only scan the head
+      const text = (el.textContent || '').slice(0, 200);
       if (anchors.some(rx => rx.test(text))) {
-        // Remove this element's nearest "collapsible-looking" ancestor; fall back to itself
         const collapsible = el.closest('[class*="collapse"], [class*="accordion"], [class*="details"], details');
         (collapsible || el).remove();
-        break; // one block is enough
+        break;
       }
     }
 
-    const cleaned = (clone.innerText || '').trim();
-    const original = (container.innerText || '').trim();
+    const cleaned = extractParagraphText(clone);
+    const original = extractParagraphText(container);
 
-    // Degradation: if stripping produced empty or near-empty text, return the original.
     if (!cleaned || cleaned.length < Math.min(20, original.length * 0.2)) {
       return original || null;
     }
@@ -445,5 +464,5 @@
     throw new Error('Could not find DeepSeek file input or drop zone');
   }
 
-  console.log('[AI Panel] DeepSeek content script loaded (2026-04-24 r5 — R1 think-content filter)');
+  console.log('[AI Panel] DeepSeek content script loaded (2026-04-24 r6 — paragraph-aware extraction)');
 })();
