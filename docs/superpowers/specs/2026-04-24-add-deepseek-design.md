@@ -26,8 +26,8 @@
 
 新建 `content/deepseek.js`，派生规则如下：
 
-- **骨架派生自 `content/chatgpt.js`**——相同的 `injectMessage` → `findSendButton` → `waitForStreamingComplete` → `getLatestResponse` 流程；相同的 safe-send 模式；相同的 context 有效性保护；相同的 MutationObserver 启动方式。
-- **思考块过滤思路派生自 `content/claude.js`**——「在响应容器内识别并跳过『思考过程』子树」这一思路复用，但锚点改为 DeepSeek 专用（见下）。
+- **骨架派生自** **`content/chatgpt.js`**——相同的 `injectMessage` → `findSendButton` → `waitForStreamingComplete` → `getLatestResponse` 流程；相同的 safe-send 模式；相同的 context 有效性保护；相同的 MutationObserver 启动方式。
+- **思考块过滤思路派生自** **`content/claude.js`**——「在响应容器内识别并跳过『思考过程』子树」这一思路复用，但锚点改为 DeepSeek 专用（见下）。
 
 选型理由：ChatGPT 的 DOM 模型（contenteditable 输入框、流式 markdown 容器、停止按钮）与 DeepSeek SPA 最接近。Claude 是现有代码里唯一已实现「把推理过程从下游捕获中隐藏」的先例。
 
@@ -48,7 +48,7 @@
   1. `.ds-markdown`
   2. `[class*="message-content"]`
   3. `.markdown`
-  取最后一个匹配节点。
+     取最后一个匹配节点。
 - R1 思考块过滤：
   - 锚点启发式：同级或上溯祖先中存在文本以 `已深度思考用时`、`Thought for`、`Thinking...` 开头或包含这些串的节点；或 class/属性中含 `reasoning`、`thinking` 的元素。
   - 找到后跳过该子树，取其下一个同级 markdown 容器作为正式回答。
@@ -89,7 +89,7 @@
 
 ## 风险
 
-1. **DOM 选择器漂移**——几乎可以确定初版会有 1~2 个选择器需要事后调整。缓解：每个选择器查找都用「fallback 链 + 启发式兜底」模式，失败时抛可辨识错误字符串（如 `Could not find DeepSeek input field`），便于用户反馈快速定位。
+1. **DOM 选择器漂移**——几乎可以确定初版会有 1\~2 个选择器需要事后调整。缓解：每个选择器查找都用「fallback 链 + 启发式兜底」模式，失败时抛可辨识错误字符串（如 `Could not find DeepSeek input field`），便于用户反馈快速定位。
 2. **R1 思考块 DOM 未经实地验证**——过滤器初版依赖 UI 文本锚点（`已深度思考用时`），稳定性低于 Claude 的 class-based 过滤。缓解：优雅降级为整段文本捕获，而不是返回 `null`。
 3. **流式结束判定**——DeepSeek 的停止按钮 / 流式属性名未知。缓解：「内容稳定」轮询本身自足；流式信号缺失仅额外等待约 2 秒。
 4. **文件上传可能不支持**——按 Gemini 先例，不支持属于 known-limit，不视为阻断缺陷。不做事前短路；失败以清晰错误呈现。
