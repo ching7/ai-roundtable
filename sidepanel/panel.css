@@ -528,17 +528,35 @@ header .subtitle {
   color: var(--text-muted);
   flex-shrink: 0;
   min-width: 0;
+  position: relative;
 }
 
-/* When expanded, the command-help list is tall (~2 sections, 4 code
-   examples plus captions). Without a cap, flex-shrink:0 on .help forces
-   its full content height into the column, compressing .input-section
-   and pushing .log out of its slot (send button and summary visually
-   collide). Limit open-state height and scroll inside the details. */
-.help details[open] {
-  max-height: 220px;
+.help details {
+  position: relative;
+}
+
+/* Render the expanded help as a popover above the summary, not as an
+   in-flow block. Previously, flex-shrink:0 + a 200+ px natural content
+   height forced .help to eat into .input-section's flex:1 allotment.
+   Because #message-input has min-height:120px, the input section could
+   not shrink enough, its action-bar overflowed into .help's slot, and
+   the send button visually collided with the summary. An absolutely
+   positioned popover leaves the in-flow layout untouched. */
+.help details[open] > :not(summary) {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  background: var(--bg-card);
+  backdrop-filter: blur(var(--blur-glass));
+  -webkit-backdrop-filter: blur(var(--blur-glass));
+  max-height: 280px;
   overflow-y: auto;
-  padding-right: 6px;
+  padding: 12px 14px;
+  border: 1px solid var(--border-glass);
+  border-radius: 10px;
+  box-shadow: var(--shadow-lg);
+  z-index: 10;
 }
 
 .help summary {
