@@ -530,6 +530,17 @@ header .subtitle {
   min-width: 0;
 }
 
+/* When expanded, the command-help list is tall (~2 sections, 4 code
+   examples plus captions). Without a cap, flex-shrink:0 on .help forces
+   its full content height into the column, compressing .input-section
+   and pushing .log out of its slot (send button and summary visually
+   collide). Limit open-state height and scroll inside the details. */
+.help details[open] {
+  max-height: 220px;
+  overflow-y: auto;
+  padding-right: 6px;
+}
+
 .help summary {
   cursor: pointer;
   color: var(--accent-secondary);
