@@ -100,11 +100,12 @@
   }
 
   function findSendButton() {
+    // Named-selector fast path (in case DeepSeek adds labels later).
     const selectors = [
       'button[aria-label*="Send" i]',
+      'button[aria-label*="发送"]',
       'button[data-testid*="send" i]',
-      'form button[type="submit"]',
-      'button:has(svg)'
+      'form button[type="submit"]'
     ];
 
     for (const selector of selectors) {
@@ -112,27 +113,38 @@
         const el = document.querySelector(selector);
         if (el) return el.closest('button') || el;
       } catch (e) {
-        // :has() may not be supported in some contexts; ignore and continue
+        // ignore and continue
       }
     }
 
-    // Fallback: find last visible button near the input, containing an SVG
-    const buttons = document.querySelectorAll('button');
-    const candidates = [];
-    for (const btn of buttons) {
-      if (btn.querySelector('svg') && isVisible(btn)) {
-        const rect = btn.getBoundingClientRect();
-        if (rect.bottom > window.innerHeight - 200) {
-          candidates.push(btn);
-        }
+    // DeepSeek uses <div role="button"> with no aria-label / data-testid.
+    // The send button is the rightmost icon-only button near the bottom
+    // of the viewport (class ds-icon-button ds-icon-button--l, prefixed
+    // with a per-build hash). Pick by geometry, not class hash.
+    const all = document.querySelectorAll('button, [role="button"]');
+    let best = null;
+    let bestRight = -Infinity;
+    for (const el of all) {
+      if (!el.querySelector('svg')) continue;
+      if ((el.textContent || '').trim().length > 0) continue;  // skip labeled buttons like 深度思考 / 智能搜索
+      if (!isVisible(el)) continue;
+      const rect = el.getBoundingClientRect();
+      if (rect.width === 0 || rect.height === 0) continue;
+      if (rect.bottom < window.innerHeight - 250) continue;
+      if (rect.right > bestRight) {
+        best = el;
+        bestRight = rect.right;
       }
     }
-    return candidates[candidates.length - 1] || null;
+    return best;
   }
 
   async function waitForButtonEnabled(button, maxWait = 2000) {
     const start = Date.now();
-    while (button.disabled && Date.now() - start < maxWait) {
+    const isDisabled = () =>
+      !!button.disabled ||
+      button.getAttribute('aria-disabled') === 'true';
+    while (isDisabled() && Date.now() - start < maxWait) {
       await sleep(50);
     }
   }
