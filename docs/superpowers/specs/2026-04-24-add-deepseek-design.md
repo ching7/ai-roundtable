@@ -96,14 +96,14 @@
 
 ## 验收清单（浏览器内手动测试）
 
-- [ ] 扩展重新加载后，`chat.deepseek.com` 标签页的状态点变绿。
-- [ ] 仅勾选 DeepSeek 发送一条消息 → DeepSeek 页面收到并正常回复。
-- [ ] DeepSeek 回复稳定后，日志出现 `deepseek: Response captured`。
-- [ ] 四家全选发一条问题，随后 `/mutual` → DeepSeek 收到其他三家回复以 `<xxx_response>` 标签包裹，并给出评价。
-- [ ] `@DeepSeek 评价一下 @Claude` 生效（2-AI 启发式：claude 作为源、deepseek 作为目标）。
-- [ ] 讨论模式选择 DeepSeek + 任一其他 AI，完整跑一轮 initial → cross-eval → summary。
-- [ ] 启用 R1 时，捕获到的回复**不包含**思考过程正文。若过滤失败，则捕获整段文本（推理 + 回答），而非完全丢失响应——视为 known-limit 记录。
-- [ ] 文件上传：支持则成功；不支持则抛出清晰错误，不崩溃。
+- [x] 扩展重新加载后，`chat.deepseek.com` 标签页的状态点变绿。
+- [x] 仅勾选 DeepSeek 发送一条消息 → DeepSeek 页面收到并正常回复。
+- [x] DeepSeek 回复稳定后，日志出现 `deepseek: Response captured`。
+- [x] 四家全选发一条问题，随后 `/mutual` → DeepSeek 收到其他三家回复以 `<xxx_response>` 标签包裹，并给出评价。
+- [x] `@DeepSeek 评价一下 @Claude` 生效（2-AI 启发式：claude 作为源、deepseek 作为目标）。
+- [x] 讨论模式选择 DeepSeek + 任一其他 AI，完整跑一轮 initial → cross-eval → summary。
+- [x] 启用 R1 时，捕获到的回复**不包含**思考过程正文。若过滤失败，则捕获整段文本（推理 + 回答），而非完全丢失响应——视为 known-limit 记录。
+- [x] 文件上传：支持则成功；不支持则抛出清晰错误，不崩溃。
 
 ## 提交策略
 
