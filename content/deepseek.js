@@ -317,8 +317,9 @@
 
     const clone = container.cloneNode(true);
 
-    // 1) Remove class-based thinking/reasoning subtrees
-    const classMatches = clone.querySelectorAll('[class*="reasoning"], [class*="thinking"]');
+    // 1) Remove class-based thinking/reasoning subtrees.
+    // "ds-think-content" is DeepSeek R1's stable wrapper (verified 2026-04-24).
+    const classMatches = clone.querySelectorAll('[class*="reasoning"], [class*="thinking"], [class*="ds-think"]');
     classMatches.forEach(el => el.remove());
 
     // 2) Remove text-anchor thinking containers
@@ -345,22 +346,30 @@
   }
 
   function getLatestResponse() {
-    const containerSelectors = [
-      '.ds-markdown',
-      '[class*="message-content"]',
-      '[class*="assistant"]',
-      '.markdown'
-    ];
+    // DeepSeek R1 structure (verified 2026-04-24):
+    //   ds-message
+    //     ├── ds-think-content  (the chain-of-thought; class-stable)
+    //     │     └── .ds-markdown  ← thinking text, MUST be excluded
+    //     └── .ds-markdown       ← the actual answer
+    // Without exclusion, we auto-capture the thinking node when it stabilizes
+    // between "thought finished" and "answer starts streaming" (a natural
+    // ~2s pause), which is what happened in discussion-mode round 1.
+    let md = document.querySelectorAll('.ds-markdown');
+    if (md.length === 0) {
+      md = document.querySelectorAll('[class*="message-content"], [class*="assistant"], .markdown');
+    }
+    if (md.length === 0) return null;
 
-    let containers = [];
-    for (const selector of containerSelectors) {
-      containers = document.querySelectorAll(selector);
-      if (containers.length > 0) break;
+    const answers = Array.from(md).filter(el => !el.closest('.ds-think-content'));
+    if (answers.length === 0) {
+      // Still thinking, no answer node yet. Return null so waitForStreamingComplete
+      // keeps polling instead of capturing the thinking text.
+      return null;
     }
 
-    if (containers.length === 0) return null;
-
-    const lastContainer = containers[containers.length - 1];
+    const lastContainer = answers[answers.length - 1];
+    // stripThinkingBlock kept as a defensive cleaning pass (harmless when the
+    // thinking chain has already been excluded by the closest() filter above).
     return stripThinkingBlock(lastContainer);
   }
 
@@ -436,5 +445,5 @@
     throw new Error('Could not find DeepSeek file input or drop zone');
   }
 
-  console.log('[AI Panel] DeepSeek content script loaded (2026-04-24 r4)');
+  console.log('[AI Panel] DeepSeek content script loaded (2026-04-24 r5 — R1 think-content filter)');
 })();
