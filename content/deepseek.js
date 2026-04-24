@@ -1,0 +1,385 @@
+// AI Panel - DeepSeek Content Script
+
+(function() {
+  'use strict';
+
+  const AI_TYPE = 'deepseek';
+
+  // Check if extension context is still valid
+  function isContextValid() {
+    return chrome.runtime && chrome.runtime.id;
+  }
+
+  // Safe message sender that checks context first
+  function safeSendMessage(message, callback) {
+    if (!isContextValid()) {
+      console.log('[AI Panel] Extension context invalidated, skipping message');
+      return;
+    }
+    try {
+      chrome.runtime.sendMessage(message, callback);
+    } catch (e) {
+      console.log('[AI Panel] Failed to send message:', e.message);
+    }
+  }
+
+  // Notify background that content script is ready
+  safeSendMessage({ type: 'CONTENT_SCRIPT_READY', aiType: AI_TYPE });
+
+  // Listen for messages from background script
+  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message.type === 'INJECT_MESSAGE') {
+      injectMessage(message.message)
+        .then(() => sendResponse({ success: true }))
+        .catch(err => sendResponse({ success: false, error: err.message }));
+      return true;
+    }
+
+    if (message.type === 'INJECT_FILES') {
+      injectFiles(message.files)
+        .then(() => sendResponse({ success: true }))
+        .catch(err => sendResponse({ success: false, error: err.message }));
+      return true;
+    }
+
+    if (message.type === 'GET_LATEST_RESPONSE') {
+      const response = getLatestResponse();
+      sendResponse({ content: response });
+      return true;
+    }
+  });
+
+  // Setup response observer for cross-reference feature
+  setupResponseObserver();
+
+  async function injectMessage(text) {
+    // DeepSeek uses a textarea or contenteditable div depending on UI variant
+    const inputSelectors = [
+      'textarea[placeholder*="DeepSeek" i]',
+      'textarea#chat-input',
+      'textarea[placeholder*="message" i]',
+      'div[contenteditable="true"][role="textbox"]',
+      'div[contenteditable="true"]',
+      'textarea'
+    ];
+
+    let inputEl = null;
+    for (const selector of inputSelectors) {
+      inputEl = document.querySelector(selector);
+      if (inputEl) break;
+    }
+
+    if (!inputEl) {
+      throw new Error('Could not find DeepSeek input field');
+    }
+
+    inputEl.focus();
+
+    if (inputEl.tagName === 'TEXTAREA') {
+      inputEl.value = text;
+      inputEl.dispatchEvent(new Event('input', { bubbles: true }));
+    } else {
+      inputEl.innerHTML = `<p>${escapeHtml(text)}</p>`;
+      inputEl.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+
+    await sleep(100);
+
+    const sendButton = findSendButton();
+    if (!sendButton) {
+      throw new Error('Could not find DeepSeek send button');
+    }
+
+    await waitForButtonEnabled(sendButton);
+    sendButton.click();
+
+    console.log('[AI Panel] DeepSeek message sent, starting response capture...');
+    waitForStreamingComplete();
+
+    return true;
+  }
+
+  function findSendButton() {
+    const selectors = [
+      'button[aria-label*="Send" i]',
+      'button[data-testid*="send" i]',
+      'form button[type="submit"]',
+      'button:has(svg)'
+    ];
+
+    for (const selector of selectors) {
+      try {
+        const el = document.querySelector(selector);
+        if (el) return el.closest('button') || el;
+      } catch (e) {
+        // :has() may not be supported in some contexts; ignore and continue
+      }
+    }
+
+    // Fallback: find last visible button near the input, containing an SVG
+    const buttons = document.querySelectorAll('button');
+    const candidates = [];
+    for (const btn of buttons) {
+      if (btn.querySelector('svg') && isVisible(btn)) {
+        const rect = btn.getBoundingClientRect();
+        if (rect.bottom > window.innerHeight - 200) {
+          candidates.push(btn);
+        }
+      }
+    }
+    return candidates[candidates.length - 1] || null;
+  }
+
+  async function waitForButtonEnabled(button, maxWait = 2000) {
+    const start = Date.now();
+    while (button.disabled && Date.now() - start < maxWait) {
+      await sleep(50);
+    }
+  }
+
+  function setupResponseObserver() {
+    const observer = new MutationObserver((mutations) => {
+      if (!isContextValid()) {
+        observer.disconnect();
+        return;
+      }
+      for (const mutation of mutations) {
+        if (mutation.type === 'childList') {
+          for (const node of mutation.addedNodes) {
+            if (node.nodeType === Node.ELEMENT_NODE) {
+              checkForResponse(node);
+            }
+          }
+        }
+      }
+    });
+
+    const startObserving = () => {
+      if (!isContextValid()) return;
+      const mainContent = document.querySelector('main') || document.body;
+      observer.observe(mainContent, {
+        childList: true,
+        subtree: true
+      });
+    };
+
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', startObserving);
+    } else {
+      startObserving();
+    }
+  }
+
+  let lastCapturedContent = '';
+  let isCapturing = false;
+
+  function checkForResponse(node) {
+    if (isCapturing) return;
+
+    const responseSelectors = [
+      '.ds-markdown',
+      '[class*="message-content"]',
+      '[class*="assistant"]'
+    ];
+
+    for (const selector of responseSelectors) {
+      if (node.matches?.(selector) || node.querySelector?.(selector)) {
+        console.log('[AI Panel] DeepSeek detected new response...');
+        waitForStreamingComplete();
+        break;
+      }
+    }
+  }
+
+  async function waitForStreamingComplete() {
+    if (isCapturing) {
+      console.log('[AI Panel] DeepSeek already capturing, skipping...');
+      return;
+    }
+    isCapturing = true;
+    console.log('[AI Panel] DeepSeek starting capture loop...');
+
+    let previousContent = '';
+    let stableCount = 0;
+    const maxWait = 600000;  // 10 minutes
+    const checkInterval = 500;
+    const stableThreshold = 4;  // 2 seconds of stable content
+
+    const startTime = Date.now();
+
+    try {
+      while (Date.now() - startTime < maxWait) {
+        if (!isContextValid()) {
+          console.log('[AI Panel] Context invalidated, stopping capture');
+          return;
+        }
+
+        await sleep(checkInterval);
+
+        const isStreaming = !!(
+          document.querySelector('button[aria-label*="Stop" i]') ||
+          document.querySelector('[data-streaming="true"]') ||
+          document.querySelector('[class*="streaming"]')
+        );
+
+        const currentContent = getLatestResponse() || '';
+
+        const contentStable = currentContent === previousContent && currentContent.length > 0;
+
+        if (!isStreaming && contentStable) {
+          stableCount++;
+          if (stableCount >= stableThreshold) {
+            if (currentContent !== lastCapturedContent) {
+              lastCapturedContent = currentContent;
+              console.log('[AI Panel] DeepSeek capturing response, length:', currentContent.length);
+              safeSendMessage({
+                type: 'RESPONSE_CAPTURED',
+                aiType: AI_TYPE,
+                content: currentContent
+              });
+            }
+            return;
+          }
+        } else {
+          stableCount = 0;
+        }
+
+        previousContent = currentContent;
+      }
+      console.log('[AI Panel] DeepSeek capture timeout after', maxWait / 1000, 'seconds');
+    } finally {
+      isCapturing = false;
+    }
+  }
+
+  // Strip R1 thinking-process blocks from the captured text.
+  // Anchor heuristics: text-based ("已深度思考用时" / "Thought for" / "Thinking..." / "思考"),
+  // and class-based (elements whose class contains "reasoning" or "thinking").
+  // Degradation: if we cannot isolate a clean answer body, return the original text
+  // rather than null — a full capture (thinking + answer) beats losing the response entirely.
+  function stripThinkingBlock(container) {
+    if (!container) return null;
+
+    const clone = container.cloneNode(true);
+
+    // 1) Remove class-based thinking/reasoning subtrees
+    const classMatches = clone.querySelectorAll('[class*="reasoning"], [class*="thinking"]');
+    classMatches.forEach(el => el.remove());
+
+    // 2) Remove text-anchor thinking containers
+    const anchors = [/已深度思考用时/, /思考完成/, /Thought for /i, /Thinking\.\.\./i];
+    const allEls = clone.querySelectorAll('*');
+    for (const el of allEls) {
+      const text = (el.textContent || '').slice(0, 200); // only scan the head
+      if (anchors.some(rx => rx.test(text))) {
+        // Remove this element's nearest "collapsible-looking" ancestor; fall back to itself
+        const collapsible = el.closest('[class*="collapse"], [class*="accordion"], [class*="details"], details');
+        (collapsible || el).remove();
+        break; // one block is enough
+      }
+    }
+
+    const cleaned = (clone.innerText || '').trim();
+    const original = (container.innerText || '').trim();
+
+    // Degradation: if stripping produced empty or near-empty text, return the original.
+    if (!cleaned || cleaned.length < Math.min(20, original.length * 0.2)) {
+      return original || null;
+    }
+    return cleaned;
+  }
+
+  function getLatestResponse() {
+    const containerSelectors = [
+      '.ds-markdown',
+      '[class*="message-content"]',
+      '[class*="assistant"]',
+      '.markdown'
+    ];
+
+    let containers = [];
+    for (const selector of containerSelectors) {
+      containers = document.querySelectorAll(selector);
+      if (containers.length > 0) break;
+    }
+
+    if (containers.length === 0) return null;
+
+    const lastContainer = containers[containers.length - 1];
+    return stripThinkingBlock(lastContainer);
+  }
+
+  // Utility functions
+  function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+  }
+
+  function sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  function isVisible(el) {
+    const style = window.getComputedStyle(el);
+    return style.display !== 'none' &&
+           style.visibility !== 'hidden' &&
+           style.opacity !== '0';
+  }
+
+  // File injection using DataTransfer API
+  async function injectFiles(filesData) {
+    console.log('[AI Panel] DeepSeek injecting files:', filesData.length);
+
+    const files = filesData.map(fileData => {
+      const byteCharacters = atob(fileData.base64);
+      const byteNumbers = new Array(byteCharacters.length);
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
+      }
+      const byteArray = new Uint8Array(byteNumbers);
+      const blob = new Blob([byteArray], { type: fileData.type });
+      return new File([blob], fileData.name, { type: fileData.type });
+    });
+
+    const fileInput = document.querySelector('input[type="file"]');
+
+    if (fileInput) {
+      const dataTransfer = new DataTransfer();
+      files.forEach(file => dataTransfer.items.add(file));
+      fileInput.files = dataTransfer.files;
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }));
+      console.log('[AI Panel] DeepSeek files injected via input');
+      await sleep(800);
+      return true;
+    }
+
+    const dropZone = document.querySelector('div[contenteditable="true"]') ||
+                     document.querySelector('textarea') ||
+                     document.querySelector('form');
+
+    if (dropZone) {
+      const dataTransfer = new DataTransfer();
+      files.forEach(file => dataTransfer.items.add(file));
+
+      const events = ['dragenter', 'dragover', 'drop'];
+      for (const eventType of events) {
+        const event = new DragEvent(eventType, {
+          bubbles: true,
+          cancelable: true,
+          dataTransfer: dataTransfer
+        });
+        dropZone.dispatchEvent(event);
+        await sleep(50);
+      }
+
+      console.log('[AI Panel] DeepSeek files injected via drop');
+      await sleep(800);
+      return true;
+    }
+
+    throw new Error('Could not find DeepSeek file input or drop zone');
+  }
+
+  console.log('[AI Panel] DeepSeek content script loaded');
+})();
