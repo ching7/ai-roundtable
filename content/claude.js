@@ -3,6 +3,13 @@
 (function() {
   'use strict';
 
+  // Idempotency: on-demand injection (background.js sendToContentScript)
+  // may re-run this IIFE in a tab where it already loaded. Without this
+  // guard, we would register chrome.runtime.onMessage twice and process
+  // every incoming message in duplicate.
+  if (window.__AI_PANEL_CONTENT_SCRIPT_LOADED__) return;
+  window.__AI_PANEL_CONTENT_SCRIPT_LOADED__ = true;
+
   const AI_TYPE = 'claude';
 
   // Check if extension context is still valid

@@ -8,6 +8,39 @@ const AI_URL_PATTERNS = {
   deepseek: ['chat.deepseek.com']
 };
 
+// Content-script files per AI. Needed for on-demand injection when a tab
+// was opened before the extension loaded (Chrome does not auto-inject
+// content scripts into pre-existing tabs on extension install/reload).
+const AI_SCRIPTS = {
+  claude: 'content/claude.js',
+  chatgpt: 'content/chatgpt.js',
+  gemini: 'content/gemini.js',
+  deepseek: 'content/deepseek.js'
+};
+
+// Wrap chrome.tabs.sendMessage: on "Receiving end does not exist" (the tab
+// has no content script listening), inject the script on demand and retry.
+async function sendToContentScript(tab, aiType, payload) {
+  try {
+    return await chrome.tabs.sendMessage(tab.id, payload);
+  } catch (err) {
+    const msg = (err && err.message) || String(err);
+    if (!/Receiving end does not exist|Could not establish connection/i.test(msg)) {
+      throw err;
+    }
+    const script = AI_SCRIPTS[aiType];
+    if (!script) throw err;
+    console.log('[AI Panel] Injecting content script on demand for', aiType);
+    await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      files: [script]
+    });
+    // Give the IIFE a moment to register its chrome.runtime.onMessage listener.
+    await new Promise(r => setTimeout(r, 200));
+    return await chrome.tabs.sendMessage(tab.id, payload);
+  }
+}
+
 // Store latest responses using chrome.storage.session (persists across service worker restarts)
 async function getStoredResponses() {
   const result = await chrome.storage.session.get('latestResponses');
@@ -75,8 +108,8 @@ async function getResponseFromContentScript(aiType) {
       return { content: responses[aiType] };
     }
 
-    // Query content script for real-time DOM content
-    const response = await chrome.tabs.sendMessage(tab.id, {
+    // Query content script for real-time DOM content (auto-inject if needed)
+    const response = await sendToContentScript(tab, aiType, {
       type: 'GET_LATEST_RESPONSE'
     });
 
@@ -98,8 +131,8 @@ async function sendMessageToAI(aiType, message) {
       return { success: false, error: `No ${aiType} tab found` };
     }
 
-    // Send message to content script
-    const response = await chrome.tabs.sendMessage(tab.id, {
+    // Send message to content script (auto-inject if tab predates extension)
+    const response = await sendToContentScript(tab, aiType, {
       type: 'INJECT_MESSAGE',
       message
     });
@@ -128,8 +161,8 @@ async function sendFilesToAI(aiType, files) {
     }
 
     console.log('[AI Panel] Background: Sending INJECT_FILES to tab', tab.id);
-    // Send files to content script
-    const response = await chrome.tabs.sendMessage(tab.id, {
+    // Send files to content script (auto-inject if tab predates extension)
+    const response = await sendToContentScript(tab, aiType, {
       type: 'INJECT_FILES',
       files
     });
