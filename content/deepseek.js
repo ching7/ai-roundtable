@@ -86,14 +86,22 @@
     await sleep(100);
 
     const sendButton = findSendButton();
-    if (!sendButton) {
-      throw new Error('Could not find DeepSeek send button');
+    if (sendButton) {
+      await waitForButtonEnabled(sendButton);
+      sendButton.click();
+      console.log('[AI Panel] DeepSeek message sent via button click');
+    } else {
+      // Fallback: most chat UIs submit on Enter. This also covers cases
+      // where findSendButton can't identify a button in novel layouts
+      // (e.g. modals open, toolbar reshuffled).
+      console.log('[AI Panel] DeepSeek send button not found, falling back to Enter key');
+      const kbdInit = { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true };
+      inputEl.dispatchEvent(new KeyboardEvent('keydown', kbdInit));
+      inputEl.dispatchEvent(new KeyboardEvent('keypress', kbdInit));
+      inputEl.dispatchEvent(new KeyboardEvent('keyup', kbdInit));
     }
 
-    await waitForButtonEnabled(sendButton);
-    sendButton.click();
-
-    console.log('[AI Panel] DeepSeek message sent, starting response capture...');
+    console.log('[AI Panel] DeepSeek starting response capture...');
     waitForStreamingComplete();
 
     return true;
@@ -118,41 +126,58 @@
     }
 
     // DeepSeek uses <div role="button"> with no aria-label / data-testid.
-    // The send button is the rightmost icon-only button on the same row
-    // as the input field. DeepSeek's home screen centers the input in the
-    // middle of the viewport (top ~= 245), so an absolute "near bottom"
-    // rule would miss it. Anchor spatially to the input instead.
+    // The send button is the rightmost icon-only button either inside the
+    // input's vertical span (home screen, small input) or just below it
+    // (conversation screen where the textarea auto-grows when holding a
+    // long /mutual prompt — observed input height up to ~336px).
     const inputEl = document.querySelector(
       'textarea[placeholder*="DeepSeek" i], textarea#chat-input, ' +
       'textarea[placeholder*="message" i], ' +
       'div[contenteditable="true"][role="textbox"], ' +
       'div[contenteditable="true"], textarea'
     );
-    const anchorMidY = inputEl
-      ? (inputEl.getBoundingClientRect().top + inputEl.getBoundingClientRect().bottom) / 2
-      : null;
+    const inputRect = inputEl ? inputEl.getBoundingClientRect() : null;
 
     const all = document.querySelectorAll('button, [role="button"]');
     let best = null;
     let bestRight = -Infinity;
+    const skipLog = [];
     for (const el of all) {
-      if (!el.querySelector('svg')) continue;
-      if ((el.textContent || '').trim().length > 0) continue;  // skip 深度思考 / 智能搜索
-      if (!isVisible(el)) continue;
       const rect = el.getBoundingClientRect();
-      if (rect.width === 0 || rect.height === 0) continue;
-      if (anchorMidY !== null) {
-        // Same visual row as input (within ~100 px of its vertical center)
-        const elMidY = (rect.top + rect.bottom) / 2;
-        if (Math.abs(elMidY - anchorMidY) > 100) continue;
-      } else {
-        // Fallback without anchor: just exclude top header icons
-        if (rect.top < 80) continue;
+      const text = (el.textContent || '').trim();
+      let skip = null;
+      if (!el.querySelector('svg')) skip = 'no-svg';
+      else if (text.length > 0) skip = `has-text:${text.slice(0, 10)}`;
+      else if (!isVisible(el)) skip = 'not-visible';
+      else if (rect.width === 0 || rect.height === 0) skip = 'zero-size';
+      else if (inputRect) {
+        // Accept if button's top is within the input's vertical span,
+        // or within 100 px below the input's bottom.
+        const withinInputRow = rect.top >= inputRect.top - 20 &&
+                               rect.top <= inputRect.bottom + 100;
+        if (!withinInputRow) {
+          skip = `out-of-row top=${Math.round(rect.top)} inputTop=${Math.round(inputRect.top)} inputBottom=${Math.round(inputRect.bottom)}`;
+        }
+      } else if (rect.top < 80) {
+        skip = `top-header top=${Math.round(rect.top)}`;
+      }
+
+      if (skip) {
+        skipLog.push({ top: Math.round(rect.top), right: Math.round(rect.right), skip });
+        continue;
       }
       if (rect.right > bestRight) {
         best = el;
         bestRight = rect.right;
       }
+    }
+
+    if (!best) {
+      console.log('[AI Panel] DeepSeek findSendButton: no candidate. inputRect=',
+        inputRect ? `${Math.round(inputRect.top)}-${Math.round(inputRect.bottom)}` : null);
+      console.table(skipLog);
+    } else {
+      console.log('[AI Panel] DeepSeek findSendButton: picked right=', bestRight);
     }
     return best;
   }
@@ -411,5 +436,5 @@
     throw new Error('Could not find DeepSeek file input or drop zone');
   }
 
-  console.log('[AI Panel] DeepSeek content script loaded');
+  console.log('[AI Panel] DeepSeek content script loaded (2026-04-24 r4)');
 })();
