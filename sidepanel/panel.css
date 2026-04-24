@@ -581,11 +581,10 @@ header .subtitle {
   border-top: 1px solid var(--border-subtle);
   padding-top: 14px;
   flex-shrink: 0;
-  max-height: 160px;
-  overflow: hidden;
+  height: 160px;
+  min-height: 0;
   display: flex;
   flex-direction: column;
-  margin-top: auto;
 }
 
 .log h3 {
