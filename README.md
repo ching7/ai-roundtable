@@ -288,22 +288,17 @@ MIT License - see [LICENSE](LICENSE) for details.
 
 ---
 
-## Author
+## 源仓库 / Upstream
 
-**Axton Liu** - AI Educator & Creator
+本项目 fork 自 **[axtonliu/ai-roundtable](https://github.com/axtonliu/ai-roundtable)**(原作者 Axton Liu)。
 
-- Website: [axtonliu.ai](https://www.axtonliu.ai)
-- YouTube: [@AxtonLiu](https://youtube.com/@AxtonLiu)
-- Twitter/X: [@axtonliu](https://twitter.com/axtonliu)
+原项目提出并验证了「多 AI 圆桌式思考流程」—— 同一个问题让多个模型互相辩论，用分歧与冲突逼出盲点。本 fork 在其基础上做了以下扩展：
 
-### Learn More
+- 接入 **DeepSeek**（第 4 个 AI）
+- **Claude 风格浅色 UI** + 下拉式交互 + 连接状态感知
+- **角色圆桌**：单个 AI 依次扮演多个内置角色，围绕话题互评
+- 同标签页连续发送 / 回复捕获的稳定性修复，以及更新的图标
 
-- [MAPS™ AI Agent Course](https://www.axtonliu.ai/aiagent) - Systematic AI agent skills training
-- [Agent Skills Resource Library](https://www.axtonliu.ai/agent-skills) - Claude Code Skills collection and guides
-- [Claude Skills: A Systematic Guide](https://www.axtonliu.ai/newsletters/ai-2/posts/claude-agent-skills-maps-framework) - Complete methodology
-- [AI Elite Weekly Newsletter](https://www.axtonliu.ai/newsletters/ai-2) - Weekly AI insights
-- [Free AI Course](https://www.axtonliu.ai/axton-free-course) - Get started with AI
+感谢原作者的开源工作。
 
----
-
-© AXTONLIU™ & AI 精英学院™ 版权所有
+> This project is a fork of **[axtonliu/ai-roundtable](https://github.com/axtonliu/ai-roundtable)** by Axton Liu. Credit and thanks to the original author for the idea and the original implementation.
