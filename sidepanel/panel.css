@@ -173,34 +173,77 @@ body {
   gap: 6px;
 }
 
-.icon-btn {
-  display: inline-flex;
+/* Unified action area at the composer bottom (AI 圆桌 send / 角色圆桌 controls) */
+.composer-actions {
+  display: flex;
   align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  border-radius: 10px;
-  border: 1px solid var(--border);
-  background: var(--bg-card);
-  color: var(--text-muted);
-  cursor: pointer;
-  transition: all var(--transition);
-  flex-shrink: 0;
+  gap: 6px;
+  margin-left: auto;
 }
 
-.icon-btn:hover:not(:disabled) {
+.role-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.bar-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 34px;
+  padding: 0 12px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  font-family: var(--font-sans);
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all var(--transition);
+}
+
+.bar-btn.primary {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+
+.bar-btn.primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+.bar-btn.ghost {
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  border-color: var(--border);
+}
+
+.bar-btn.ghost:hover:not(:disabled) {
   background: var(--bg-subtle);
   color: var(--text-primary);
 }
 
-.icon-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-  background: var(--bg-card);
-  color: var(--text-faint);
+.bar-btn.danger {
+  background: transparent;
+  color: var(--danger);
+  border-color: var(--border);
 }
 
-.icon-btn:focus-visible {
+.bar-btn.danger:hover:not(:disabled) {
+  background: rgba(192, 57, 43, 0.08);
+  border-color: var(--danger);
+}
+
+.bar-btn:disabled {
+  background: var(--bg-subtle);
+  color: var(--text-faint);
+  border-color: var(--border);
+  cursor: not-allowed;
+}
+
+.bar-btn:focus-visible {
   outline: none;
   box-shadow: 0 0 0 2px var(--accent);
 }
@@ -219,7 +262,6 @@ body {
   cursor: pointer;
   transition: background var(--transition), transform var(--transition);
   flex-shrink: 0;
-  margin-left: auto;
 }
 
 .send-btn:hover:not(:disabled) {
@@ -354,7 +396,7 @@ body {
   transition: background var(--transition);
 }
 
-.dropdown-item:hover {
+.dropdown-item:not(.disabled-option):hover {
   background: var(--bg-subtle);
 }
 
@@ -383,6 +425,23 @@ body {
   font-weight: 500;
 }
 
+/* Connection status text (在线 / 未连接) */
+.dropdown-item .item-status {
+  font-size: 11px;
+  color: var(--text-faint);
+  flex-shrink: 0;
+}
+
+.dropdown-item .item-status.online {
+  color: var(--success);
+}
+
+/* Disconnected AI: greyed out and not selectable */
+.dropdown-item.disabled-option {
+  cursor: not-allowed;
+  color: var(--text-faint);
+}
+
 .brand-dot {
   width: 9px;
   height: 9px;
@@ -392,58 +451,15 @@ body {
   transition: opacity var(--transition);
 }
 
-.brand-dot.offline {
-  opacity: 0.28;
-  filter: grayscale(1);
+/* Disconnected AI dot — hollow grey instead of a solid brand color */
+.disabled-option .brand-dot {
+  background: transparent;
+  border: 1.5px solid var(--text-faint);
 }
 
 @keyframes ddIn {
   from { opacity: 0; transform: translateY(-4px); }
   to { opacity: 1; transform: translateY(0); }
-}
-
-/* ========== FILE CHIPS ========== */
-.file-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.file-list:empty {
-  display: none;
-}
-
-.file-item {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 8px;
-  background: var(--bg-subtle);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  font-size: 11.5px;
-  color: var(--text-secondary);
-  max-width: 160px;
-}
-
-.file-item .file-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.file-item .remove-file {
-  background: none;
-  border: none;
-  color: var(--text-faint);
-  cursor: pointer;
-  padding: 0;
-  line-height: 1;
-  font-size: 15px;
-}
-
-.file-item .remove-file:hover {
-  color: var(--danger);
 }
 
 /* ========== DISCUSSION PANEL ========== */
@@ -663,7 +679,8 @@ body {
   color: var(--text-primary);
 }
 
-#summary-content {
+#summary-content,
+#role-summary-content {
   background: var(--bg-sunken);
   padding: 14px;
   border-radius: 12px;
@@ -675,20 +692,23 @@ body {
   overflow-y: auto;
 }
 
-#summary-content h4 {
+#summary-content h4,
+#role-summary-content h4 {
   color: var(--text-primary);
   margin-bottom: 8px;
   font-size: 13.5px;
   font-weight: 600;
 }
 
-#summary-content .round-summary {
+#summary-content .round-summary,
+#role-summary-content .round-summary {
   margin-bottom: 14px;
   padding-bottom: 14px;
   border-bottom: 1px solid var(--border);
 }
 
-#summary-content .round-summary:last-child {
+#summary-content .round-summary:last-child,
+#role-summary-content .round-summary:last-child {
   border-bottom: none;
   margin-bottom: 0;
   padding-bottom: 0;
@@ -718,6 +738,115 @@ body {
 #summary-content .ai-name.chatgpt { color: var(--ai-chatgpt); }
 #summary-content .ai-name.gemini { color: var(--ai-gemini); }
 #summary-content .ai-name.deepseek { color: var(--ai-deepseek); }
+
+/* ========== ROLE ROUNDTABLE ========== */
+.role-setup {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.role-config {
+  display: flex;
+  gap: 8px;
+}
+
+.role-config-dd {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Full-width config triggers (vs the compact composer-bar ones) */
+.dropdown-trigger.wide {
+  width: 100%;
+  height: 38px;
+  justify-content: space-between;
+  background: var(--bg-card);
+  font-size: 13px;
+}
+
+.role-grid-label {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.role-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+}
+
+.role-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  padding: 10px 12px;
+  border: 1.5px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-card);
+  cursor: pointer;
+  text-align: left;
+  transition: all var(--transition);
+  font-family: var(--font-sans);
+}
+
+.role-card:hover {
+  border-color: var(--border-strong);
+  background: var(--bg-subtle);
+}
+
+.role-card:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
+.role-card.selected {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.role-glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--rc, var(--text-muted)) 18%, transparent);
+  color: var(--rc, var(--text-muted));
+  font-size: 12px;
+  font-weight: 600;
+  margin-bottom: 3px;
+}
+
+.role-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.role-tag {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+/* Role transcript (rendered into #role-summary-content) */
+#role-summary-content .role-turn {
+  margin: 8px 0;
+  padding: 10px 12px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+#role-summary-content .role-turn-name {
+  font-weight: 600;
+  font-size: 12px;
+  margin-bottom: 5px;
+  color: var(--accent-hover);
+}
 
 /* ========== HELP ========== */
 .help {
@@ -777,10 +906,8 @@ body {
 .log {
   border-top: 1px solid var(--border);
   padding-top: 12px;
-  margin-top: auto;
   display: flex;
   flex-direction: column;
-  min-height: 0;
 }
 
 .log h3 {
@@ -793,7 +920,7 @@ body {
 }
 
 #log-container {
-  max-height: 180px;
+  height: 200px;      /* fixed length — scrolls internally, never grows the page */
   overflow-y: auto;
   font-family: var(--font-mono);
   font-size: 11px;

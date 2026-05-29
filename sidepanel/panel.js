@@ -19,12 +19,51 @@ const CROSS_REF_ACTIONS = {
   compare: { prompt: '对比一下你的观点' }
 };
 
+// Top-level roundtable kind (peers); the AI-roundtable sub-modes live under 'ai'.
+const KIND_OPTIONS = [
+  { value: 'ai', label: 'AI 圆桌' },
+  { value: 'role', label: '角色圆桌' }
+];
+
+// AI 圆桌 sub-modes (玩法)
 const MODE_OPTIONS = [
   { value: 'normal', label: '普通发送' },
   { value: 'mutual', label: '互评' },
   { value: 'cross', label: '交叉引用' },
   { value: 'discussion', label: '讨论' }
 ];
+
+// ===== Role roundtable (single AI plays multiple built-in roles) =====
+const ROLE_PRESETS = [
+  // Kept (default-selected): 务实 / 批判 / 前瞻
+  { id: 'pragmatist', name: '务实派工程师', glyph: '实', tagline: '优先可落地方案', color: '#3b82f6',
+    persona: '你是一名务实派工程师，关注方案能否快速落地、成本与可维护性，倾向选择简单、成熟、风险可控的方案，警惕过度设计。' },
+  { id: 'critic', name: '批判性思考者', glyph: '疑', tagline: '质疑假设前提', color: '#22c55e',
+    persona: '你是一名批判性思考者，擅长质疑隐含假设与前提，主动指出论证漏洞、被忽略的风险与反例，推动论点更严谨。' },
+  { id: 'futurist', name: '技术前瞻者', glyph: '望', tagline: '着眼未来趋势', color: '#f59e0b',
+    persona: '你是一名技术前瞻者，关注行业趋势与新兴技术，从未来数年的演进评估方案，提示可能被颠覆或更优的新路径。' },
+  // General-purpose, mutually distinct viewpoints
+  { id: 'synthesizer', name: '整合者', glyph: '合', tagline: '寻求共识与平衡', color: '#14b8a6',
+    persona: '你是一名整合者，擅长综合不同立场，寻找各方观点的共同点与可调和之处，权衡利弊后推动形成平衡、可执行的共识。' },
+  { id: 'empiricist', name: '数据派', glyph: '据', tagline: '用数据与证据说话', color: '#6366f1',
+    persona: '你是一名数据派，强调用事实、数据、证据与真实案例说话，反对空泛断言，会要求论点有据可依，并指出缺乏证据之处。' },
+  { id: 'useradvocate', name: '用户代言人', glyph: '众', tagline: '从用户需求出发', color: '#ec4899',
+    persona: '你是一名用户代言人，始终从最终用户或受众的真实需求、体验与感受出发，评估方案对人的实际价值与可接受度。' }
+];
+
+const ROLE_STYLES = [
+  { value: 'debate', label: '辩论风格(各执一词)', instruction: '请坚持你的立场，针对其他角色的观点提出反驳和不同见解，明确指出他们的不足或盲点。' },
+  { value: 'roundtable', label: '圆桌讨论(互相补充)', instruction: '请在他人观点的基础上做补充与完善，指出可以结合之处，推动讨论走向共识与更完整的方案。' },
+  { value: 'qa', label: '问答风格(互相追问)', instruction: '请针对其他角色的观点提出有针对性的追问与质疑，促使其澄清前提、补全论据或暴露问题。' }
+];
+
+const ROLE_ROUNDS = [
+  { value: '1', label: '每人发言 1 轮' },
+  { value: '2', label: '每人发言 2 轮' },
+  { value: '3', label: '每人发言 3 轮' }
+];
+
+const ROLE_TURN_TIMEOUT_MS = 10 * 60 * 1000; // per-turn capture wait, matches content-script max
 
 const ACTION_OPTIONS = [
   { value: '', label: '动作(可选)' },
@@ -39,43 +78,43 @@ const MODE_PLACEHOLDERS = {
   normal: '输入消息…（可用 @Claude、/mutual 等命令）',
   mutual: '互评提示（可留空，默认让各方互相评价）…',
   cross: '附加提示（可留空）…',
-  discussion: '输入讨论主题…（需在“对象”中选择 2 位参与者）'
+  discussion: '输入讨论主题…（需在“对象”中选择 2 位参与者）',
+  role: '输入讨论话题…例如：微服务拆分的最佳实践'
 };
 
 const SEND_TITLES = {
   normal: '发送',
   mutual: '发送互评',
   cross: '发送交叉引用',
-  discussion: '开始讨论'
+  discussion: '开始讨论',
+  role: '开始圆桌讨论'
 };
 
 // DOM Elements
 const messageInput = document.getElementById('message-input');
 const sendBtn = document.getElementById('send-btn');
 const logContainer = document.getElementById('log-container');
-const fileInput = document.getElementById('file-input');
-const addFileBtn = document.getElementById('add-file-btn');
-const fileList = document.getElementById('file-list');
 const crossRow = document.getElementById('cross-row');
 const discussionPanel = document.getElementById('discussion-panel');
 const discussionSummary = document.getElementById('discussion-summary');
+const roleSetup = document.getElementById('role-setup');
+const roleActive = document.getElementById('role-active');
+const roleSummaryPanel = document.getElementById('role-summary');
+const roleGrid = document.getElementById('role-grid');
+const startRoleBtn = document.getElementById('start-role-btn');
+const roleControls = document.getElementById('role-controls');
 
 // Dropdown controllers (assigned in setupDropdowns)
 let ddTarget = null;
-let ddMode = null;
+let ddKind = null;   // top-level: AI 圆桌 / 角色圆桌
+let ddMode = null;   // AI 圆桌 sub-mode (玩法)
 let ddAction = null;
 let ddSource = null;
+let ddRoleStyle = null;
+let ddRoleRounds = null;
 
-// Selected files storage
-let selectedFiles = [];
-
-// Track connected tabs
-const connectedTabs = {
-  claude: null,
-  chatgpt: null,
-  gemini: null,
-  deepseek: null
-};
+// Roles currently selected in the setup grid (Set of role ids)
+const selectedRoles = new Set();
 
 // Discussion Mode State
 let discussionState = {
@@ -89,17 +128,41 @@ let discussionState = {
   summaryTimer: null  // setInterval handle for generateSummary polling
 };
 
+// Role Roundtable State
+let roleState = {
+  active: false,
+  ai: null,            // the AI tab that plays all roles
+  topic: '',
+  style: 'roundtable',
+  totalRounds: 2,
+  roles: [],           // selected role ids, in ROLE_PRESETS order
+  currentRound: 0,
+  turnQueue: [],       // role ids still to speak this round
+  awaitingRole: null,  // role whose response we're waiting to capture
+  history: [],         // [{round, role, content}]
+  turnTimer: null,     // per-turn capture timeout
+  summaryTimer: null   // summary capture timeout
+};
+
 
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
   setupMessageListener();
   setupDropdowns();
-  checkConnectedTabs();
+  refreshConnections();
   setupComposer();
   setupDiscussionControls();
-  setupFileUpload();
-  applyMode('normal');
+  setupRoleRoundtable();
+  applyMode();
 });
+
+// Mode/state-aware composer action area:
+// 'ai' → send button · 'role-setup' → 开始 · 'role-active' → 下一轮/总结/结束 · 'role-summary' → none
+function setComposerAction(state) {
+  sendBtn.classList.toggle('hidden', state !== 'ai');
+  startRoleBtn.classList.toggle('hidden', state !== 'role-setup');
+  roleControls.classList.toggle('hidden', state !== 'role-active');
+}
 
 // ============================================
 // Dropdown Component
@@ -113,7 +176,7 @@ function closeAllDropdowns(exceptRoot) {
   });
 }
 
-function createDropdown(root, { type, options, defaultSelected, defaultValue, onChange }) {
+function createDropdown(root, { type, options, defaultSelected, defaultValue, onChange, connectionAware, onOpen }) {
   const trigger = root.querySelector('.dropdown-trigger');
   const menu = root.querySelector('.dropdown-menu');
   const labelEl = trigger.querySelector('.dropdown-label');
@@ -121,6 +184,14 @@ function createDropdown(root, { type, options, defaultSelected, defaultValue, on
   const selected = new Set(type === 'multi' ? (defaultSelected || []) : []);
   let value = type === 'single' ? (defaultValue ?? (options[0] && options[0].value)) : null;
   let disabled = false;
+  let forceSingle = false; // when true, a 'multi' dropdown behaves as single-select
+  // Connection-aware dropdowns: which option values are currently reachable.
+  // Start optimistic (all) so the first paint isn't all-grey before the first re-check.
+  let connectedSet = new Set(options.map(o => o.value));
+
+  function isConnected(v) {
+    return !connectionAware || connectedSet.has(v);
+  }
 
   function getSelected() {
     return options.map(o => o.value).filter(v => selected.has(v));
@@ -146,31 +217,53 @@ function createDropdown(root, { type, options, defaultSelected, defaultValue, on
   function renderMenu() {
     menu.innerHTML = '';
     options.forEach(opt => {
+      const connected = isConnected(opt.value);
       const item = document.createElement('button');
       item.type = 'button';
-      item.className = 'dropdown-item';
+      item.className = 'dropdown-item' + (connected ? '' : ' disabled-option');
       item.setAttribute('role', 'menuitem');
       item.dataset.value = opt.value;
+      if (!connected) {
+        item.setAttribute('aria-disabled', 'true');
+        item.tabIndex = -1; // skip non-actionable rows in keyboard tab order
+      }
 
       let inner = '';
       if (opt.color) {
         inner += `<span class="brand-dot" data-ai="${opt.value}" style="--dot:${opt.color}"></span>`;
       }
       inner += `<span class="item-label"></span>`;
+      if (connectionAware) inner += `<span class="item-status"></span>`;
       if (type === 'multi') inner += `<span class="check">✓</span>`;
       item.innerHTML = inner;
       item.querySelector('.item-label').textContent = opt.label;
+      if (connectionAware) {
+        const st = item.querySelector('.item-status');
+        st.textContent = connected ? '在线' : '未连接';
+        st.classList.toggle('online', connected);
+      }
 
       const isSel = type === 'multi' ? selected.has(opt.value) : value === opt.value;
       item.classList.toggle('selected', isSel);
 
       item.addEventListener('click', (e) => {
         e.stopPropagation();
+        if (connectionAware && !connected) return; // a disconnected AI can't be selected
         if (type === 'multi') {
-          if (selected.has(opt.value)) selected.delete(opt.value);
-          else selected.add(opt.value);
-          item.classList.toggle('selected');
-          updateLabel();
+          if (forceSingle) {
+            selected.clear();
+            selected.add(opt.value);
+            menu.querySelectorAll('.dropdown-item').forEach(i =>
+              i.classList.toggle('selected', i.dataset.value === opt.value)
+            );
+            updateLabel();
+            close();
+          } else {
+            if (selected.has(opt.value)) selected.delete(opt.value);
+            else selected.add(opt.value);
+            item.classList.toggle('selected');
+            updateLabel();
+          }
           if (onChange) onChange(getSelected());
         } else {
           value = opt.value;
@@ -189,6 +282,7 @@ function createDropdown(root, { type, options, defaultSelected, defaultValue, on
 
   function open() {
     if (disabled) return;
+    if (onOpen) onOpen(); // e.g. re-check live connection status before showing
     closeAllDropdowns(root);
     const rect = trigger.getBoundingClientRect();
     const spaceBelow = window.innerHeight - rect.bottom;
@@ -234,9 +328,32 @@ function createDropdown(root, { type, options, defaultSelected, defaultValue, on
       trigger.disabled = d;
       if (d) close();
     },
-    setStatus: (ai, connected) => {
-      const dot = menu.querySelector(`.brand-dot[data-ai="${ai}"]`);
-      if (dot) dot.classList.toggle('offline', !connected);
+    setConnections: (arr) => {
+      if (!connectionAware) return;
+      connectedSet = new Set(arr);
+      if (type === 'multi') {
+        // A disconnected AI can no longer remain selected.
+        [...selected].forEach(v => { if (!connectedSet.has(v)) selected.delete(v); });
+      }
+      renderMenu();
+      updateLabel();
+    },
+    // Make a 'multi' dropdown behave single-select (used by 对象 in 角色圆桌 mode).
+    setSingleSelect: (on) => {
+      if (type !== 'multi') return;
+      forceSingle = on;
+      if (on) {
+        const cur = getSelected();
+        selected.clear();
+        if (cur.length > 0) {
+          selected.add(cur[0]);
+        } else {
+          const firstConn = options.find(o => isConnected(o.value));
+          if (firstConn) selected.add(firstConn.value);
+        }
+      }
+      renderMenu();
+      updateLabel();
     },
     close
   };
@@ -251,14 +368,23 @@ function setupDropdowns() {
   ddTarget = createDropdown(document.getElementById('dd-target'), {
     type: 'multi',
     options: targetOptions,
-    defaultSelected: [...AI_TYPES]
+    defaultSelected: [...AI_TYPES],
+    connectionAware: true,
+    onOpen: refreshConnections
+  });
+
+  ddKind = createDropdown(document.getElementById('dd-kind'), {
+    type: 'single',
+    options: KIND_OPTIONS,
+    defaultValue: 'ai',
+    onChange: () => applyMode()
   });
 
   ddMode = createDropdown(document.getElementById('dd-mode'), {
     type: 'single',
     options: MODE_OPTIONS,
     defaultValue: 'normal',
-    onChange: (v) => applyMode(v)
+    onChange: () => applyMode()
   });
 
   ddAction = createDropdown(document.getElementById('dd-action'), {
@@ -270,7 +396,21 @@ function setupDropdowns() {
   ddSource = createDropdown(document.getElementById('dd-source'), {
     type: 'single',
     options: targetOptions,
-    defaultValue: AI_TYPES[0]
+    defaultValue: AI_TYPES[0],
+    connectionAware: true,
+    onOpen: refreshConnections
+  });
+
+  ddRoleStyle = createDropdown(document.getElementById('dd-role-style'), {
+    type: 'single',
+    options: ROLE_STYLES,
+    defaultValue: 'roundtable'
+  });
+
+  ddRoleRounds = createDropdown(document.getElementById('dd-role-rounds'), {
+    type: 'single',
+    options: ROLE_ROUNDS,
+    defaultValue: '2'
   });
 
   document.addEventListener('click', () => closeAllDropdowns());
@@ -279,10 +419,35 @@ function setupDropdowns() {
   });
 }
 
-function applyMode(mode) {
-  const isMutualOrCross = mode === 'mutual' || mode === 'cross';
+// Effective mode = 'role' when 角色圆桌 is chosen, else the AI-roundtable sub-mode.
+function currentMode() {
+  return ddKind.getValue() === 'role' ? 'role' : ddMode.getValue();
+}
+
+function applyMode() {
+  const isRole = ddKind.getValue() === 'role';
+  const subMode = ddMode.getValue(); // normal | mutual | cross | discussion
+  const mode = isRole ? 'role' : subMode;
+  const isMutualOrCross = !isRole && (subMode === 'mutual' || subMode === 'cross');
+
+  // 玩法 sub-mode dropdown only applies to AI 圆桌
+  ddMode.el.classList.toggle('hidden', isRole);
   ddAction.el.classList.toggle('hidden', !isMutualOrCross);
-  crossRow.classList.toggle('hidden', mode !== 'cross');
+  crossRow.classList.toggle('hidden', isRole || subMode !== 'cross');
+
+  // Role mode: topic input + single-AI picker, dedicated setup panel below,
+  // no普通 send / file / action affordances. The active/summary panels are
+  // shown imperatively by the orchestration; a mode (re)entry resets to setup.
+  roleSetup.classList.toggle('hidden', !isRole);
+  roleActive.classList.add('hidden');
+  roleSummaryPanel.classList.add('hidden');
+  // A mode (re)entry also clears any leftover discussion panels. (During an
+  // active discussion the dropdowns are locked, so applyMode isn't reached;
+  // show* functions reveal their panel after calling applyMode.)
+  discussionPanel.classList.add('hidden');
+  discussionSummary.classList.add('hidden');
+  setComposerAction(isRole ? 'role-setup' : 'ai');
+  if (ddTarget) ddTarget.setSingleSelect(isRole);
 
   messageInput.placeholder = MODE_PLACEHOLDERS[mode] || '输入消息…';
   sendBtn.title = SEND_TITLES[mode] || '发送';
@@ -311,18 +476,6 @@ function setupComposer() {
   });
 }
 
-async function maybeSendFiles(recipients) {
-  const filesToSend = [...selectedFiles];
-  if (filesToSend.length === 0) return;
-  log(`正在上传 ${filesToSend.length} 个文件...`);
-  for (const target of recipients) {
-    await sendFilesToAI(target, filesToSend);
-  }
-  clearFiles();
-  // Wait a bit for files to be processed before sending message
-  await new Promise(r => setTimeout(r, 500));
-}
-
 function resetComposerHeight() {
   messageInput.style.height = 'auto';
 }
@@ -331,10 +484,16 @@ async function handleSend() {
   // Prevent re-entry (e.g. a second Enter press) while a send is already in flight.
   if (sendBtn.disabled) return;
 
-  const mode = ddMode.getValue();
+  const mode = currentMode();
 
   if (mode === 'discussion') {
     await startDiscussionFromComposer();
+    return;
+  }
+
+  if (mode === 'role') {
+    // Enter in 角色圆桌 mode starts the roundtable (the 开始 button does the same).
+    await startRoleRoundtable();
     return;
   }
 
@@ -352,7 +511,6 @@ async function handleSend() {
     sendBtn.disabled = true;
     messageInput.value = '';
     resetComposerHeight();
-    await maybeSendFiles(selected);
     const prompt = rawMessage || actionPrompt || '请评价以上观点。你同意什么？不同意什么？有什么补充？';
     try {
       log(`互评: ${selected.join(', ')}`);
@@ -380,7 +538,6 @@ async function handleSend() {
     sendBtn.disabled = true;
     messageInput.value = '';
     resetComposerHeight();
-    await maybeSendFiles(targetAIs);
     const text = [rawMessage, actionPrompt].filter(Boolean).join(' ').trim() || '请参考以下回复并给出你的看法';
     const parsed = {
       crossRef: true,
@@ -417,19 +574,14 @@ async function handleSend() {
     return;
   }
 
-  // Validate before uploading files so an aborted review keeps the attachments.
   if (parsed.mutual && targets.length < 2) {
     log('互评需要至少选择 2 个 AI', 'error');
     return;
   }
 
-  // Files go only to AIs that receive the prompt; a /cross source is read, not sent files.
-  const fileRecipients = parsed.crossRef ? parsed.targetAIs : targets;
-
   sendBtn.disabled = true;
   messageInput.value = '';
   resetComposerHeight();
-  await maybeSendFiles(fileRecipients);
 
   try {
     if (parsed.mutual) {
@@ -657,11 +809,14 @@ function log(message, type = 'info') {
 function setupMessageListener() {
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.type === 'TAB_STATUS_UPDATE') {
-      updateTabStatus(message.aiType, message.connected);
+      // A push arrived — re-query authoritatively rather than trust a single flag.
+      refreshConnections();
     } else if (message.type === 'RESPONSE_CAPTURED') {
       log(`${message.aiType}: 已捕获回复`, 'success');
       if (discussionState.active && discussionState.pendingResponses.has(message.aiType)) {
         handleDiscussionResponse(message.aiType, message.content);
+      } else if (roleState.active && roleState.awaitingRole && message.aiType === roleState.ai) {
+        handleRoleResponse(message.content);
       }
     } else if (message.type === 'SEND_RESULT') {
       if (message.success) {
@@ -673,19 +828,23 @@ function setupMessageListener() {
   });
 }
 
-async function checkConnectedTabs() {
+// Authoritatively re-check which AI tabs are open and push the result into the
+// connection-aware dropdowns. Called at boot, on each target/source dropdown
+// open, and whenever background broadcasts a TAB_STATUS_UPDATE.
+async function refreshConnections() {
   try {
     const tabs = await chrome.tabs.query({});
-
+    const connected = new Set();
     for (const tab of tabs) {
       const aiType = getAITypeFromUrl(tab.url);
       if (aiType) {
-        connectedTabs[aiType] = tab.id;
-        updateTabStatus(aiType, true);
+        connected.add(aiType);
       }
     }
+    if (ddTarget) ddTarget.setConnections([...connected]);
+    if (ddSource) ddSource.setConnections([...connected]);
   } catch (err) {
-    log('检查标签页出错: ' + err.message, 'error');
+    log('检查连接出错: ' + err.message, 'error');
   }
 }
 
@@ -696,13 +855,6 @@ function getAITypeFromUrl(url) {
   if (url.includes('gemini.google.com')) return 'gemini';
   if (url.includes('chat.deepseek.com')) return 'deepseek';
   return null;
-}
-
-function updateTabStatus(aiType, connected) {
-  if (connected) connectedTabs[aiType] = true;
-  // Reflect status on the dropdown brand dots (target + source menus)
-  if (ddTarget) ddTarget.setStatus(aiType, connected);
-  if (ddSource) ddSource.setStatus(aiType, connected);
 }
 
 // ============================================
@@ -718,12 +870,12 @@ function setupDiscussionControls() {
 }
 
 function lockComposerForDiscussion(locked) {
+  ddKind.setDisabled(locked);
   ddMode.setDisabled(locked);
   ddTarget.setDisabled(locked);
   ddAction.setDisabled(locked);
   messageInput.disabled = locked;
   sendBtn.disabled = locked;
-  addFileBtn.disabled = locked;
 }
 
 async function startDiscussionFromComposer() {
@@ -979,9 +1131,6 @@ ${historyText}`;
 }
 
 function showSummary(ai1Summary, ai2Summary) {
-  discussionPanel.classList.add('hidden');
-  discussionSummary.classList.remove('hidden');
-
   const [ai1, ai2] = discussionState.participants;
 
   if (!ai1Summary && !ai2Summary) {
@@ -1023,8 +1172,10 @@ function showSummary(ai1Summary, ai2Summary) {
   // Summary is terminal — free the composer so the user can keep working while
   // reading it. The 新讨论 button clears the summary when they're done.
   lockComposerForDiscussion(false);
+  ddKind.setValue('ai');
   ddMode.setValue('normal');
-  applyMode('normal');
+  applyMode();                                  // resets composer + hides all mode panels
+  discussionSummary.classList.remove('hidden'); // reveal the summary AFTER applyMode
   log('讨论总结已生成', 'success');
 }
 
@@ -1053,8 +1204,9 @@ function resetDiscussion() {
   document.getElementById('generate-summary-btn').disabled = true;
 
   lockComposerForDiscussion(false);
+  ddKind.setValue('ai');
   ddMode.setValue('normal');
-  applyMode('normal');
+  applyMode();
 
   log('讨论已结束');
 }
@@ -1076,97 +1228,299 @@ function escapeHtml(text) {
 }
 
 // ============================================
-// File Upload
+// Role Roundtable (single AI plays multiple built-in roles, sequentially)
 // ============================================
 
-function setupFileUpload() {
-  addFileBtn.addEventListener('click', () => fileInput.click());
+const SUMMARY_SENTINEL = '__summary__';
 
-  fileInput.addEventListener('change', (e) => {
-    const files = Array.from(e.target.files);
-    files.forEach(file => addFile(file));
-    fileInput.value = '';
-  });
+function roleById(id) {
+  return ROLE_PRESETS.find(r => r.id === id);
 }
 
-function addFile(file) {
-  if (file.size > 10 * 1024 * 1024) {
-    log(`文件 ${file.name} 超过 10MB 限制`, 'error');
+function setupRoleRoundtable() {
+  buildRoleGrid();
+  document.getElementById('start-role-btn').addEventListener('click', startRoleRoundtable);
+  document.getElementById('role-next-btn').addEventListener('click', nextRoleRound);
+  document.getElementById('role-summary-btn').addEventListener('click', generateRoleSummary);
+  document.getElementById('role-end-btn').addEventListener('click', endRoleRoundtable);
+  document.getElementById('role-new-btn').addEventListener('click', resetRoleRoundtable);
+}
+
+function buildRoleGrid() {
+  roleGrid.innerHTML = '';
+  selectedRoles.clear();
+  ROLE_PRESETS.forEach((role, i) => {
+    const on = i < 3; // default: first 3 selected (matches design)
+    if (on) selectedRoles.add(role.id);
+
+    const card = document.createElement('button');
+    card.type = 'button';
+    card.className = 'role-card' + (on ? ' selected' : '');
+    card.dataset.role = role.id;
+    card.setAttribute('aria-pressed', on ? 'true' : 'false');
+
+    const glyph = document.createElement('span');
+    glyph.className = 'role-glyph';
+    glyph.style.setProperty('--rc', role.color);
+    glyph.textContent = role.glyph;
+    const name = document.createElement('span');
+    name.className = 'role-name';
+    name.textContent = role.name;
+    const tag = document.createElement('span');
+    tag.className = 'role-tag';
+    tag.textContent = role.tagline;
+    card.append(glyph, name, tag);
+
+    card.addEventListener('click', () => {
+      if (roleState.active) return; // grid is locked while a roundtable runs
+      const nowOn = !selectedRoles.has(role.id);
+      if (nowOn) selectedRoles.add(role.id);
+      else selectedRoles.delete(role.id);
+      card.classList.toggle('selected', nowOn);
+      card.setAttribute('aria-pressed', nowOn ? 'true' : 'false');
+      updateStartRoleBtn();
+    });
+
+    roleGrid.appendChild(card);
+  });
+  updateStartRoleBtn();
+}
+
+function updateStartRoleBtn() {
+  document.getElementById('start-role-btn').disabled = selectedRoles.size < 2;
+}
+
+function selectedRolesInOrder() {
+  return ROLE_PRESETS.filter(r => selectedRoles.has(r.id)).map(r => r.id);
+}
+
+async function startRoleRoundtable() {
+  if (roleState.active) {
+    log('角色圆桌进行中，请使用控制面板，或先结束当前圆桌', 'error');
     return;
   }
 
-  if (selectedFiles.some(f => f.name === file.name && f.size === file.size)) {
+  const topic = messageInput.value.trim();
+  const roles = selectedRolesInOrder();
+  const ai = ddTarget.getSelected()[0]; // 对象 is single-select in role mode
+
+  if (roles.length < 2) { log('请至少选择 2 个角色', 'error'); return; }
+  if (!topic) { log('请输入讨论话题', 'error'); return; }
+  if (!ai) { log('请在“对象”中选择一个已连接的 AI 作为扮演者', 'error'); return; }
+
+  const totalRounds = parseInt(ddRoleRounds.getValue(), 10) || 2;
+  const style = ddRoleStyle.getValue() || 'roundtable';
+
+  roleState = {
+    active: true, ai, topic, style, totalRounds, roles,
+    currentRound: 1, turnQueue: [...roles], awaitingRole: null,
+    history: [], turnTimer: null, summaryTimer: null
+  };
+
+  messageInput.value = '';
+  resetComposerHeight();
+  lockComposerForDiscussion(true);
+
+  roleSummaryPanel.classList.add('hidden');
+  roleSetup.classList.add('hidden');
+  roleActive.classList.remove('hidden');
+  setComposerAction('role-active'); // 下一轮 / 总结 / 结束 in the send slot
+  document.getElementById('role-round-badge').textContent = '第 1 轮';
+  document.getElementById('role-participants').textContent = roles.map(id => roleById(id).name).join(' · ');
+  document.getElementById('role-topic-display').textContent = topic;
+  document.getElementById('role-next-btn').disabled = true;
+  document.getElementById('role-summary-btn').disabled = true;
+
+  const aiName = AI_META[ai] ? AI_META[ai].name : ai;
+  log(`角色圆桌开始: ${aiName} 扮演 ${roles.length} 个角色，共 ${totalRounds} 轮`, 'success');
+
+  runNextRoleTurn();
+}
+
+async function runNextRoleTurn() {
+  if (!roleState.active) return;
+
+  if (roleState.turnQueue.length === 0) {
+    onRoleRoundComplete();
     return;
   }
 
-  selectedFiles.push(file);
-  renderFileList();
+  const roleId = roleState.turnQueue.shift();
+  const role = roleById(roleId);
+  updateRoleStatus('waiting', `第 ${roleState.currentRound} 轮 · ${role.name} 发言中…`);
+
+  // Deliver the prompt FIRST, then arm capture. While the send is in flight
+  // awaitingRole stays null, so a stale/late capture of the previous turn
+  // cannot be misattributed to this role.
+  const res = await sendToAI(roleState.ai, buildRolePrompt(role));
+  if (!roleState.active) return; // ended/reset during the send
+
+  if (!res || !res.success) {
+    log(`角色圆桌: 发送给 ${role.name} 失败`, 'error');
+    updateRoleStatus('ready', '发送失败，可点“结束”或“生成总结”');
+    document.getElementById('role-next-btn').disabled = roleState.currentRound >= roleState.totalRounds;
+    document.getElementById('role-summary-btn').disabled = false;
+    return;
+  }
+
+  roleState.awaitingRole = roleId;
+  clearTimeout(roleState.turnTimer);
+  roleState.turnTimer = setTimeout(() => {
+    if (roleState.active && roleState.awaitingRole === roleId) {
+      roleState.awaitingRole = null;
+      log(`角色圆桌: 等待 ${role.name} 回复超时`, 'error');
+      updateRoleStatus('ready', `${role.name} 回复超时，可点“结束”或“生成总结”`);
+      document.getElementById('role-next-btn').disabled = roleState.currentRound >= roleState.totalRounds;
+      document.getElementById('role-summary-btn').disabled = false;
+    }
+  }, ROLE_TURN_TIMEOUT_MS);
 }
 
-function removeFile(index) {
-  selectedFiles.splice(index, 1);
-  renderFileList();
+function handleRoleResponse(content) {
+  if (!roleState.active || !roleState.awaitingRole) return;
+
+  if (roleState.awaitingRole === SUMMARY_SENTINEL) {
+    clearTimeout(roleState.summaryTimer);
+    roleState.awaitingRole = null;
+    log('角色圆桌: 总结已生成', 'success');
+    showRoleSummary(content);
+    return;
+  }
+
+  clearTimeout(roleState.turnTimer);
+  const roleId = roleState.awaitingRole;
+  roleState.history.push({ round: roleState.currentRound, role: roleId, content });
+  roleState.awaitingRole = null;
+  log(`角色圆桌: ${roleById(roleId).name} 已发言 (第 ${roleState.currentRound} 轮)`, 'success');
+  runNextRoleTurn();
 }
 
-function renderFileList() {
-  fileList.innerHTML = '';
+function onRoleRoundComplete() {
+  updateRoleStatus('ready', `第 ${roleState.currentRound} 轮完成`);
+  document.getElementById('role-next-btn').disabled = roleState.currentRound >= roleState.totalRounds;
+  document.getElementById('role-summary-btn').disabled = false;
+}
 
-  selectedFiles.forEach((file, index) => {
-    const item = document.createElement('div');
-    item.className = 'file-item';
-    const nameSpan = document.createElement('span');
-    nameSpan.className = 'file-name';
-    nameSpan.title = file.name;
-    nameSpan.textContent = file.name;
-    const removeBtn = document.createElement('button');
-    removeBtn.className = 'remove-file';
-    removeBtn.title = '移除';
-    removeBtn.innerHTML = '&times;';
-    removeBtn.addEventListener('click', () => removeFile(index));
-    item.appendChild(nameSpan);
-    item.appendChild(removeBtn);
-    fileList.appendChild(item);
+function nextRoleRound() {
+  if (!roleState.active || roleState.currentRound >= roleState.totalRounds) return;
+  roleState.currentRound++;
+  roleState.turnQueue = [...roleState.roles];
+  document.getElementById('role-round-badge').textContent = `第 ${roleState.currentRound} 轮`;
+  document.getElementById('role-next-btn').disabled = true;
+  document.getElementById('role-summary-btn').disabled = true;
+  log(`角色圆桌: 第 ${roleState.currentRound} 轮开始`);
+  runNextRoleTurn();
+}
+
+function buildRoleTranscript() {
+  if (roleState.history.length === 0) return '（你是第一位发言者，暂无其他发言。）';
+  return roleState.history
+    .map(h => `【${roleById(h.role).name}】:\n${h.content}`)
+    .join('\n\n');
+}
+
+function buildRolePrompt(role) {
+  const style = ROLE_STYLES.find(s => s.value === roleState.style) || ROLE_STYLES[1];
+  return `你正在参加一场围绕以下话题的多角色圆桌讨论。本轮你只扮演【${role.name}】这一个角色，不要扮演或代表其他角色。
+
+# 你的角色设定
+${role.persona}
+
+# 讨论话题
+${roleState.topic}
+
+# 目前为止的发言
+${buildRoleTranscript()}
+
+# 本轮要求
+${style.instruction}
+请以【${role.name}】的身份发言（约 200–400 字），不要复述他人原文，直接给出你的观点。`;
+}
+
+async function generateRoleSummary() {
+  if (!roleState.active) return;
+  document.getElementById('role-summary-btn').disabled = true;
+  document.getElementById('role-next-btn').disabled = true;
+  updateRoleStatus('waiting', '正在请求生成总结...');
+
+  const summaryPrompt = `以上是一场围绕“${roleState.topic}”的多角色圆桌讨论的完整记录：
+
+${buildRoleTranscript()}
+
+请你以中立主持人的身份，对这场讨论做总结，包含：
+1. 主要共识点
+2. 主要分歧点
+3. 各角色的核心观点
+4. 综合结论`;
+
+  log('角色圆桌: 正在请求生成总结...');
+
+  // Deliver first, then arm capture (same stale-capture guard as a turn).
+  const res = await sendToAI(roleState.ai, summaryPrompt);
+  if (!roleState.active) return;
+
+  if (!res || !res.success) {
+    log('角色圆桌: 总结请求发送失败', 'error');
+    updateRoleStatus('ready', '发送失败，可重试或结束');
+    document.getElementById('role-summary-btn').disabled = false;
+    return;
+  }
+
+  roleState.awaitingRole = SUMMARY_SENTINEL;
+  clearTimeout(roleState.summaryTimer);
+  roleState.summaryTimer = setTimeout(() => {
+    if (roleState.active && roleState.awaitingRole === SUMMARY_SENTINEL) {
+      roleState.awaitingRole = null;
+      log('角色圆桌: 总结等待超时', 'error');
+      updateRoleStatus('ready', '总结等待超时，可重试或结束');
+      document.getElementById('role-summary-btn').disabled = false;
+    }
+  }, ROLE_TURN_TIMEOUT_MS);
+}
+
+function showRoleSummary(summaryContent) {
+  roleActive.classList.add('hidden');
+  roleSummaryPanel.classList.remove('hidden');
+  setComposerAction('role-summary'); // hide all action buttons; use 新的角色圆桌
+
+  let html = `<div class="round-summary"><h4>主持人总结</h4><div>${escapeHtml(summaryContent).replace(/\n/g, '<br>')}</div></div>`;
+  html += `<div class="round-summary"><h4>完整讨论记录</h4>`;
+  roleState.history.forEach(h => {
+    const role = roleById(h.role);
+    html += `<div class="role-turn"><div class="role-turn-name">第 ${h.round} 轮 · ${escapeHtml(role.name)}</div><div>${escapeHtml(h.content).replace(/\n/g, '<br>')}</div></div>`;
   });
+  html += `</div>`;
+  document.getElementById('role-summary-content').innerHTML = html;
+
+  // Terminal: free the composer; stay in role mode with the summary visible.
+  roleState.active = false;
+  lockComposerForDiscussion(false);
+  log('角色圆桌总结已生成', 'success');
 }
 
-function clearFiles() {
-  selectedFiles = [];
-  renderFileList();
+function endRoleRoundtable() {
+  if (confirm('确定结束角色圆桌吗？建议先生成总结。')) {
+    resetRoleRoundtable();
+  }
 }
 
-async function readFileAsBase64(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const base64 = reader.result.split(',')[1];
-      resolve({
-        name: file.name,
-        type: file.type || 'application/octet-stream',
-        size: file.size,
-        base64
-      });
-    };
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
+function resetRoleRoundtable() {
+  clearTimeout(roleState.turnTimer);
+  clearTimeout(roleState.summaryTimer);
+  roleState = {
+    active: false, ai: null, topic: '', style: 'roundtable', totalRounds: 2, roles: [],
+    currentRound: 0, turnQueue: [], awaitingRole: null, history: [], turnTimer: null, summaryTimer: null
+  };
+  document.getElementById('role-next-btn').disabled = true;
+  document.getElementById('role-summary-btn').disabled = true;
+  lockComposerForDiscussion(false);
+  ddKind.setValue('role');
+  applyMode(); // back to the role setup panel
+  log('角色圆桌已结束');
 }
 
-async function sendFilesToAI(aiType, files) {
-  log(`${aiType}: 准备上传 ${files.length} 个文件...`);
-  const fileDataArray = await Promise.all(files.map(readFileAsBase64));
-  log(`${aiType}: 文件已编码，正在发送...`);
-
-  return new Promise((resolve) => {
-    chrome.runtime.sendMessage(
-      { type: 'SEND_FILES', aiType, files: fileDataArray },
-      (response) => {
-        if (response?.success) {
-          log(`${aiType}: 文件上传成功 (${files.length} 个)`, 'success');
-        } else {
-          log(`${aiType}: 文件上传失败 - ${response?.error || 'Unknown'}`, 'error');
-        }
-        resolve(response);
-      }
-    );
-  });
+function updateRoleStatus(state, text) {
+  const el = document.getElementById('role-status');
+  el.textContent = text;
+  el.className = 'discussion-status ' + state;
 }

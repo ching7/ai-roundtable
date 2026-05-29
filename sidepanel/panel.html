@@ -37,16 +37,8 @@
         <span class="cross-text">的回复</span>
       </div>
 
-      <!-- File chips -->
-      <div id="file-list" class="file-list"></div>
-
       <!-- Bottom bar -->
       <div class="composer-bar">
-        <input type="file" id="file-input" multiple hidden accept="image/*,.pdf,.txt,.md,.json,.csv,.xml,.html,.css,.js,.ts,.py">
-        <button type="button" id="add-file-btn" class="icon-btn" title="添加文件" aria-label="添加文件">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-        </button>
-
         <!-- 对象 (multi-select targets) -->
         <div class="dropdown" id="dd-target" data-type="multi">
           <button type="button" class="dropdown-trigger" aria-haspopup="true" aria-expanded="false" title="发送对象">
@@ -56,9 +48,18 @@
           <div class="dropdown-menu" role="menu"></div>
         </div>
 
-        <!-- 模式 -->
+        <!-- 圆桌类型 (AI 圆桌 / 角色圆桌) -->
+        <div class="dropdown" id="dd-kind" data-type="single">
+          <button type="button" class="dropdown-trigger" aria-haspopup="true" aria-expanded="false" title="圆桌类型">
+            <span class="dropdown-label">AI 圆桌</span>
+            <svg class="caret" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+          </button>
+          <div class="dropdown-menu" role="menu"></div>
+        </div>
+
+        <!-- 玩法 (AI 圆桌 下的子模式) -->
         <div class="dropdown" id="dd-mode" data-type="single">
-          <button type="button" class="dropdown-trigger" aria-haspopup="true" aria-expanded="false" title="模式">
+          <button type="button" class="dropdown-trigger" aria-haspopup="true" aria-expanded="false" title="玩法">
             <span class="dropdown-label">普通发送</span>
             <svg class="caret" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
           </button>
@@ -74,10 +75,66 @@
           <div class="dropdown-menu" role="menu"></div>
         </div>
 
-        <button id="send-btn" class="send-btn" title="发送" aria-label="发送">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
-        </button>
+        <!-- Unified action area (same slot for AI 圆桌 send and 角色圆桌 controls) -->
+        <div class="composer-actions" id="composer-actions">
+          <button id="send-btn" class="send-btn" title="发送" aria-label="发送">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
+          </button>
+          <button id="start-role-btn" class="bar-btn primary hidden" title="开始圆桌讨论">
+            开始
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="7" y1="17" x2="17" y2="7"/><polyline points="7 7 17 7 17 17"/></svg>
+          </button>
+          <div class="role-controls hidden" id="role-controls">
+            <button id="role-next-btn" class="bar-btn primary" disabled>下一轮</button>
+            <button id="role-summary-btn" class="bar-btn ghost" disabled>总结</button>
+            <button id="role-end-btn" class="bar-btn danger" title="结束圆桌">结束</button>
+          </div>
+        </div>
       </div>
+    </section>
+
+    <!-- Role roundtable: setup (shown only in 角色圆桌 mode, before start) -->
+    <section class="role-setup hidden" id="role-setup">
+      <div class="role-config">
+        <div class="dropdown role-config-dd" id="dd-role-style" data-type="single">
+          <button type="button" class="dropdown-trigger wide" aria-haspopup="true" aria-expanded="false">
+            <span class="dropdown-label">圆桌讨论(互相补充)</span>
+            <svg class="caret" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+          </button>
+          <div class="dropdown-menu" role="menu"></div>
+        </div>
+        <div class="dropdown role-config-dd" id="dd-role-rounds" data-type="single">
+          <button type="button" class="dropdown-trigger wide" aria-haspopup="true" aria-expanded="false">
+            <span class="dropdown-label">每人发言 2 轮</span>
+            <svg class="caret" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+          </button>
+          <div class="dropdown-menu" role="menu"></div>
+        </div>
+      </div>
+      <p class="role-grid-label">选择嘉宾(至少 2 位)</p>
+      <div class="role-grid" id="role-grid"></div>
+    </section>
+
+    <!-- Role roundtable: active info panel (controls live in the composer action area) -->
+    <section class="discussion-panel hidden" id="role-active">
+      <div class="discussion-header">
+        <div class="discussion-info">
+          <span class="round-badge" id="role-round-badge">第 1 轮</span>
+          <span class="participants-badge" id="role-participants"></span>
+        </div>
+      </div>
+      <div class="discussion-topic-display" id="role-topic-display"></div>
+      <div class="discussion-status" id="role-status">准备中...</div>
+    </section>
+
+    <!-- Role roundtable: summary / transcript -->
+    <section class="discussion-summary hidden" id="role-summary">
+      <h3>讨论总结</h3>
+      <div id="role-summary-content"></div>
+      <button id="role-new-btn" class="primary-btn">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        新的角色圆桌
+      </button>
     </section>
 
     <!-- Discussion control panel (shown only while a discussion is active) -->
@@ -128,22 +185,27 @@
       </button>
     </section>
 
-    <!-- Usage help -->
-    <details class="help">
-      <summary>用法说明</summary>
-      <ul>
-        <li><strong>普通发送</strong> — 选好「对象」后直接发送;也支持手打 <code>@Claude</code>、<code>/mutual</code>、<code>/cross</code> 命令。</li>
-        <li><strong>互评</strong> — 选 ≥2 个对象,各方互相评价当前回复;可加自定义提示或选「动作」。</li>
-        <li><strong>交叉引用</strong> — 选「对象」(评价方)与「来源」,让对象评价来源 AI 的回复。</li>
-        <li><strong>讨论</strong> — 选正好 2 位对象,输入主题开始多轮辩论。</li>
-      </ul>
-    </details>
-
     <!-- Activity log -->
     <section class="log">
       <h3>活动日志</h3>
       <div id="log-container"></div>
     </section>
+
+    <!-- Usage help -->
+    <details class="help">
+      <summary>用法说明</summary>
+      <ul>
+        <li><strong>AI 圆桌</strong> — 多个 AI 协作,在「玩法」里选:
+          <ul>
+            <li><strong>普通发送</strong> — 选好「对象」后直接发送;也支持 <code>@Claude</code>、<code>/mutual</code>、<code>/cross</code>。</li>
+            <li><strong>互评</strong> — 选 ≥2 个对象,各方互相评价当前回复。</li>
+            <li><strong>交叉引用</strong> — 让「对象」评价「来源」AI 的回复。</li>
+            <li><strong>讨论</strong> — 选正好 2 位对象,多轮辩论。</li>
+          </ul>
+        </li>
+        <li><strong>角色圆桌</strong> — 单个 AI 扮演多个内置角色(≥2),按风格/轮数多轮互评。</li>
+      </ul>
+    </details>
   </div>
 
   <script src="panel.js"></script>
