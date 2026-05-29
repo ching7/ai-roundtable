@@ -286,20 +286,24 @@
 
         const currentContent = getLatestResponse() || '';
 
+        // Only "complete" on NEW content (≠ the already-captured response). A
+        // back-to-back message to the same tab still shows the previous answer
+        // for a moment; without this the loop would return on that stale answer
+        // before the new one arrives, orphaning the new response's capture (the
+        // observer re-trigger is skipped while this loop holds isCapturing).
         const contentStable = currentContent === previousContent && currentContent.length > 0;
+        const isNewContent = currentContent !== lastCapturedContent;
 
-        if (!isStreaming && contentStable) {
+        if (!isStreaming && contentStable && isNewContent) {
           stableCount++;
           if (stableCount >= stableThreshold) {
-            if (currentContent !== lastCapturedContent) {
-              lastCapturedContent = currentContent;
-              console.log('[AI Panel] DeepSeek capturing response, length:', currentContent.length);
-              safeSendMessage({
-                type: 'RESPONSE_CAPTURED',
-                aiType: AI_TYPE,
-                content: currentContent
-              });
-            }
+            lastCapturedContent = currentContent;
+            console.log('[AI Panel] DeepSeek capturing response, length:', currentContent.length);
+            safeSendMessage({
+              type: 'RESPONSE_CAPTURED',
+              aiType: AI_TYPE,
+              content: currentContent
+            });
             return;
           }
         } else {

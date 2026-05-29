@@ -67,6 +67,14 @@
   setupResponseObserver();
 
   async function injectMessage(text) {
+    // After a previous response, Gemini's send control briefly stays the "stop
+    // generating" button and the editor re-initializes. Sending now would click
+    // the stop button (or hit a not-yet-ready editor) and nothing gets sent — so
+    // wait for the previous generation to finish, then let the editor settle.
+    // This is what makes back-to-back messages (e.g. role roundtable) reliable.
+    await waitForSendReady();
+    await sleep(700);
+
     // Gemini uses a rich text editor (contenteditable or textarea)
     const inputSelectors = [
       '.ql-editor',
@@ -107,14 +115,20 @@
 
     // Find and click the send button
     const sendButton = findSendButton();
-    if (!sendButton) {
-      throw new Error('Could not find send button');
+    if (sendButton) {
+      await waitForButtonEnabled(sendButton);
+      sendButton.click();
+      console.log('[AI Panel] Gemini message sent via button click');
+    } else {
+      // Fallback: Gemini's input sends on Enter. Avoids clicking the
+      // wrong toolbar button (e.g. the "+" attach button) when the send
+      // button can't be confidently identified.
+      console.log('[AI Panel] Gemini send button not found, falling back to Enter key');
+      const kbdInit = { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true };
+      inputEl.dispatchEvent(new KeyboardEvent('keydown', kbdInit));
+      inputEl.dispatchEvent(new KeyboardEvent('keypress', kbdInit));
+      inputEl.dispatchEvent(new KeyboardEvent('keyup', kbdInit));
     }
-
-    // Wait for button to be enabled
-    await waitForButtonEnabled(sendButton);
-
-    sendButton.click();
 
     // Start capturing response after sending
     console.log('[AI Panel] Gemini message sent, starting response capture...');
@@ -123,55 +137,120 @@
     return true;
   }
 
+  // aria-label patterns of buttons we must NEVER click as the "send" button.
+  // Gemini's input toolbar holds an "Add file" / "+" button on the LEFT;
+  // a buggy fallback used to pick it up and trigger the file picker.
+  const ATTACH_LABEL_RE = /add|attach|upload|file|image|photo|audio|microphone|\bmic\b|camera|gallery|drive|上传|添加|附件|文件|图片|照片|麦克风|相机/i;
+
+  function looksLikeAttachButton(btn) {
+    const aria = btn.getAttribute('aria-label') || '';
+    return ATTACH_LABEL_RE.test(aria);
+  }
+
   function findSendButton() {
-    // Gemini's send button
-    const selectors = [
-      'button[aria-label*="Send"]',
-      'button[aria-label*="submit"]',
+    // Named-selector fast path. Covers English/Chinese aria-labels and
+    // common test-id conventions. We still validate the match isn't an
+    // attach button before returning.
+    const namedSelectors = [
+      'button[aria-label*="Send" i]',
+      'button[aria-label*="发送"]',
+      'button[data-test-id*="send" i]',
+      'button[data-testid*="send" i]',
       'button.send-button',
-      'button[data-test-id="send-button"]',
-      '.input-area button',
-      'button mat-icon[data-mat-icon-name="send"]'
+      'button mat-icon[data-mat-icon-name="send"]',
+      'form button[type="submit"]'
     ];
 
-    for (const selector of selectors) {
-      const el = document.querySelector(selector);
-      if (el && isVisible(el)) {
-        return el.closest('button') || el;
+    for (const selector of namedSelectors) {
+      try {
+        const el = document.querySelector(selector);
+        if (!el) continue;
+        const btn = el.closest('button') || el;
+        if (isVisible(btn) && !looksLikeAttachButton(btn)) return btn;
+      } catch (e) {
+        // ignore unsupported selectors and continue
       }
     }
 
-    // Fallback: find button with send-related icon or near input
-    const buttons = document.querySelectorAll('button');
-    for (const btn of buttons) {
-      // Check for send icon or arrow
-      if (btn.querySelector('mat-icon, svg') && isVisible(btn)) {
-        const text = btn.textContent.toLowerCase();
-        const ariaLabel = (btn.getAttribute('aria-label') || '').toLowerCase();
-        if (text.includes('send') || ariaLabel.includes('send') ||
-            text.includes('submit') || ariaLabel.includes('submit')) {
-          return btn;
-        }
+    // Fallback: anchor to the input row and pick the rightmost icon-only
+    // button with no text. This mirrors the strategy that fixed the same
+    // class of bug in DeepSeek (commits 83eb177, 8b2e76f).
+    const inputEl = document.querySelector(
+      '.ql-editor, rich-textarea textarea, ' +
+      'textarea[aria-label*="prompt" i], textarea[placeholder*="Enter" i], ' +
+      'div[contenteditable="true"], textarea'
+    );
+    const inputRect = inputEl ? inputEl.getBoundingClientRect() : null;
+
+    const all = document.querySelectorAll('button, [role="button"]');
+    let best = null;
+    let bestRight = -Infinity;
+    for (const el of all) {
+      if (!el.querySelector('svg, mat-icon')) continue;
+      const text = (el.textContent || '').trim();
+      if (text.length > 0) continue;
+      if (!isVisible(el)) continue;
+      if (looksLikeAttachButton(el)) continue;
+      const rect = el.getBoundingClientRect();
+      if (rect.width === 0 || rect.height === 0) continue;
+      if (inputRect) {
+        const withinInputRow = rect.top >= inputRect.top - 20 &&
+                               rect.top <= inputRect.bottom + 120;
+        if (!withinInputRow) continue;
+      } else if (rect.bottom < window.innerHeight - 200) {
+        continue;
+      }
+      if (rect.right > bestRight) {
+        best = el;
+        bestRight = rect.right;
       }
     }
 
-    // Last resort: find button at bottom of page
-    for (const btn of buttons) {
-      const rect = btn.getBoundingClientRect();
-      if (rect.bottom > window.innerHeight - 150 && isVisible(btn)) {
-        if (btn.querySelector('svg, mat-icon')) {
-          return btn;
-        }
-      }
+    if (best) {
+      console.log('[AI Panel] Gemini findSendButton: picked right=', Math.round(bestRight));
+    } else {
+      console.log('[AI Panel] Gemini findSendButton: no candidate');
     }
-
-    return null;
+    return best;
   }
 
   async function waitForButtonEnabled(button, maxWait = 2000) {
     const start = Date.now();
-    while (button.disabled && Date.now() - start < maxWait) {
+    const isDisabled = () =>
+      !!button.disabled ||
+      button.getAttribute('aria-disabled') === 'true';
+    while (isDisabled() && Date.now() - start < maxWait) {
       await sleep(50);
+    }
+  }
+
+  // While Gemini is generating, the send control is a "stop" button. Detecting
+  // it lets us (a) avoid capturing a half-finished response and (b) avoid
+  // sending the next message onto the stop button.
+  function findStopButton() {
+    const selectors = [
+      'button[aria-label*="Stop" i]',
+      'button[aria-label*="停止"]',
+      'button[aria-label*="stop response" i]',
+      'mat-icon[data-mat-icon-name="stop"]'
+    ];
+    for (const selector of selectors) {
+      try {
+        const el = document.querySelector(selector);
+        if (el && isVisible(el)) return el.closest('button') || el;
+      } catch (e) {
+        // ignore unsupported selectors
+      }
+    }
+    return null;
+  }
+
+  // Wait until Gemini has finished the previous generation (no stop button),
+  // so the next send lands on the real send button and a ready editor.
+  async function waitForSendReady(maxWait = 12000) {
+    const start = Date.now();
+    while (findStopButton() && Date.now() - start < maxWait) {
+      await sleep(200);
     }
   }
 
@@ -254,18 +333,19 @@
 
         const currentContent = getLatestResponse() || '';
 
-        if (currentContent === previousContent && currentContent.length > 0) {
+        // Require NEW content (≠ already-captured) so a back-to-back message to
+        // the same tab waits for the new answer instead of "completing" on the
+        // still-visible previous one (which orphaned the new response's capture).
+        if (currentContent === previousContent && currentContent.length > 0 && currentContent !== lastCapturedContent) {
           stableCount++;
           if (stableCount >= stableThreshold) {
-            if (currentContent !== lastCapturedContent) {
-              lastCapturedContent = currentContent;
-              safeSendMessage({
-                type: 'RESPONSE_CAPTURED',
-                aiType: AI_TYPE,
-                content: currentContent
-              });
-              console.log('[AI Panel] Gemini response captured, length:', currentContent.length);
-            }
+            lastCapturedContent = currentContent;
+            safeSendMessage({
+              type: 'RESPONSE_CAPTURED',
+              aiType: AI_TYPE,
+              content: currentContent
+            });
+            console.log('[AI Panel] Gemini response captured, length:', currentContent.length);
             return;
           }
         } else {

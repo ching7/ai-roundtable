@@ -224,18 +224,19 @@
 
         const currentContent = getLatestResponse() || '';
 
-        if (!isStreaming && currentContent === previousContent && currentContent.length > 0) {
+        // Require NEW content (≠ already-captured) so a back-to-back message to
+        // the same tab waits for the new answer instead of "completing" on the
+        // still-visible previous one (which orphaned the new response's capture).
+        if (!isStreaming && currentContent === previousContent && currentContent.length > 0 && currentContent !== lastCapturedContent) {
           stableCount++;
           if (stableCount >= stableThreshold) {
-            if (currentContent !== lastCapturedContent) {
-              lastCapturedContent = currentContent;
-              safeSendMessage({
-                type: 'RESPONSE_CAPTURED',
-                aiType: AI_TYPE,
-                content: currentContent
-              });
-              console.log('[AI Panel] Claude response captured, length:', currentContent.length);
-            }
+            lastCapturedContent = currentContent;
+            safeSendMessage({
+              type: 'RESPONSE_CAPTURED',
+              aiType: AI_TYPE,
+              content: currentContent
+            });
+            console.log('[AI Panel] Claude response captured, length:', currentContent.length);
             return;
           }
         } else {

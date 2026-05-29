@@ -75,6 +75,33 @@
           <div class="dropdown-menu" role="menu"></div>
         </div>
 
+        <!-- 嘉宾 (角色多选, shown only in 角色圆桌) -->
+        <div class="dropdown hidden" id="dd-roles" data-type="multi">
+          <button type="button" class="dropdown-trigger" aria-haspopup="true" aria-expanded="false" title="嘉宾(角色,至少 2 位)">
+            <span class="dropdown-label">嘉宾</span>
+            <svg class="caret" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+          </button>
+          <div class="dropdown-menu" role="menu"></div>
+        </div>
+
+        <!-- 讨论模式 (shown only in 角色圆桌) -->
+        <div class="dropdown hidden" id="dd-role-style" data-type="single">
+          <button type="button" class="dropdown-trigger" aria-haspopup="true" aria-expanded="false" title="讨论模式">
+            <span class="dropdown-label">圆桌讨论(互相补充)</span>
+            <svg class="caret" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+          </button>
+          <div class="dropdown-menu" role="menu"></div>
+        </div>
+
+        <!-- 发言轮次 (shown only in 角色圆桌) -->
+        <div class="dropdown hidden" id="dd-role-rounds" data-type="single">
+          <button type="button" class="dropdown-trigger" aria-haspopup="true" aria-expanded="false" title="发言轮次">
+            <span class="dropdown-label">每人发言 2 轮</span>
+            <svg class="caret" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+          </button>
+          <div class="dropdown-menu" role="menu"></div>
+        </div>
+
         <!-- Unified action area (same slot for AI 圆桌 send and 角色圆桌 controls) -->
         <div class="composer-actions" id="composer-actions">
           <button id="send-btn" class="send-btn" title="发送" aria-label="发送">
@@ -91,28 +118,6 @@
           </div>
         </div>
       </div>
-    </section>
-
-    <!-- Role roundtable: setup (shown only in 角色圆桌 mode, before start) -->
-    <section class="role-setup hidden" id="role-setup">
-      <div class="role-config">
-        <div class="dropdown role-config-dd" id="dd-role-style" data-type="single">
-          <button type="button" class="dropdown-trigger wide" aria-haspopup="true" aria-expanded="false">
-            <span class="dropdown-label">圆桌讨论(互相补充)</span>
-            <svg class="caret" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
-          </button>
-          <div class="dropdown-menu" role="menu"></div>
-        </div>
-        <div class="dropdown role-config-dd" id="dd-role-rounds" data-type="single">
-          <button type="button" class="dropdown-trigger wide" aria-haspopup="true" aria-expanded="false">
-            <span class="dropdown-label">每人发言 2 轮</span>
-            <svg class="caret" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
-          </button>
-          <div class="dropdown-menu" role="menu"></div>
-        </div>
-      </div>
-      <p class="role-grid-label">选择嘉宾(至少 2 位)</p>
-      <div class="role-grid" id="role-grid"></div>
     </section>
 
     <!-- Role roundtable: active info panel (controls live in the composer action area) -->

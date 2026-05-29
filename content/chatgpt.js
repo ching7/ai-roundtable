@@ -251,25 +251,25 @@
           console.log(`[AI Panel] ChatGPT check: contentLen=${currentContent.length}, stableCount=${stableCount}, elapsed=${Math.round(elapsed/1000)}s`);
         }
 
-        // Content is stable when content unchanged and has content
+        // Content must be stable AND new (≠ already-captured). Requiring "new"
+        // stops a back-to-back message to the same tab from "completing" on the
+        // still-visible previous answer before the new one arrives (which would
+        // orphan the new response's capture).
         const contentStable = currentContent === previousContent && currentContent.length > 0;
+        const isNewContent = currentContent !== lastCapturedContent;
 
-        if (contentStable) {
+        if (contentStable && isNewContent) {
           stableCount++;
           // Capture after 4 stable checks (2 seconds of stable content)
           if (stableCount >= stableThreshold) {
-            if (currentContent !== lastCapturedContent) {
-              lastCapturedContent = currentContent;
-              console.log('[AI Panel] ChatGPT capturing response, length:', currentContent.length);
-              safeSendMessage({
-                type: 'RESPONSE_CAPTURED',
-                aiType: AI_TYPE,
-                content: currentContent
-              });
-              console.log('[AI Panel] ChatGPT response captured and sent!');
-            } else {
-              console.log('[AI Panel] ChatGPT content same as last capture, skipping');
-            }
+            lastCapturedContent = currentContent;
+            console.log('[AI Panel] ChatGPT capturing response, length:', currentContent.length);
+            safeSendMessage({
+              type: 'RESPONSE_CAPTURED',
+              aiType: AI_TYPE,
+              content: currentContent
+            });
+            console.log('[AI Panel] ChatGPT response captured and sent!');
             return;
           }
         } else {

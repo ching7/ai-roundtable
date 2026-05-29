@@ -34,21 +34,24 @@ const MODE_OPTIONS = [
 ];
 
 // ===== Role roundtable (single AI plays multiple built-in roles) =====
+// Default-selected: the first 3 (批判 / 系统 / 落地).
 const ROLE_PRESETS = [
-  // Kept (default-selected): 务实 / 批判 / 前瞻
-  { id: 'pragmatist', name: '务实派工程师', glyph: '实', tagline: '优先可落地方案', color: '#3b82f6',
-    persona: '你是一名务实派工程师，关注方案能否快速落地、成本与可维护性，倾向选择简单、成熟、风险可控的方案，警惕过度设计。' },
-  { id: 'critic', name: '批判性思考者', glyph: '疑', tagline: '质疑假设前提', color: '#22c55e',
-    persona: '你是一名批判性思考者，擅长质疑隐含假设与前提，主动指出论证漏洞、被忽略的风险与反例，推动论点更严谨。' },
-  { id: 'futurist', name: '技术前瞻者', glyph: '望', tagline: '着眼未来趋势', color: '#f59e0b',
-    persona: '你是一名技术前瞻者，关注行业趋势与新兴技术，从未来数年的演进评估方案，提示可能被颠覆或更优的新路径。' },
-  // General-purpose, mutually distinct viewpoints
-  { id: 'synthesizer', name: '整合者', glyph: '合', tagline: '寻求共识与平衡', color: '#14b8a6',
-    persona: '你是一名整合者，擅长综合不同立场，寻找各方观点的共同点与可调和之处，权衡利弊后推动形成平衡、可执行的共识。' },
-  { id: 'empiricist', name: '数据派', glyph: '据', tagline: '用数据与证据说话', color: '#6366f1',
-    persona: '你是一名数据派，强调用事实、数据、证据与真实案例说话，反对空泛断言，会要求论点有据可依，并指出缺乏证据之处。' },
-  { id: 'useradvocate', name: '用户代言人', glyph: '众', tagline: '从用户需求出发', color: '#ec4899',
-    persona: '你是一名用户代言人，始终从最终用户或受众的真实需求、体验与感受出发，评估方案对人的实际价值与可接受度。' }
+  { id: 'critic', name: '批判性思考者', tagline: '挑刺·找漏洞与隐藏假设', color: '#22c55e',
+    persona: '你是批判性思考者(挑刺的人)，专门寻找漏洞、反例与隐藏假设。你不为反对而反对，而是用追问让论点更严谨——例如"降低的是哪部分成本""有没有算迁移成本""流量大幅波动时还成立吗"。' },
+  { id: 'architect', name: '系统设计者', tagline: '结构化·模块化', color: '#14b8a6',
+    persona: '你是系统设计者(架构师)，擅长把一个观点拆解成一个系统。你关注模块划分、组件边界与整体布局，把笼统的想法结构化为清晰的模块、流程与兜底机制。' },
+  { id: 'builder', name: '落地执行者', tagline: '能不能做·怎么做', color: '#3b82f6',
+    persona: '你是落地执行者(工程实现派)，只关心现实约束与可实现性：多久能做出来、数据从哪来、延迟和成本能否达标。你拒绝空想，聚焦能不能落地、具体怎么做。' },
+  { id: 'analyst', name: '数据分析师', tagline: '用证据与数据说话', color: '#6366f1',
+    persona: '你是数据分析师(证据派)，只相信证据与数据。你会追问是否有 A/B 测试、历史数据是否支持、是否存在统计偏差或幸存者偏差，反对凭感觉下结论。' },
+  { id: 'pm', name: '产品经理', tagline: '用户价值视角', color: '#ec4899',
+    persona: '你是产品经理(用户代言人)，把一切拉回用户价值：用户是否真的需要、痛点是否被高估、用户是否愿意为此付费。你始终代表真实用户的需求与体验。' },
+  { id: 'risk', name: '风险控制者', tagline: '最坏情况·反脆弱', color: '#ef4444',
+    persona: '你是风险控制者(反脆弱角色)，专门设想最坏情况：模型输出错误怎么办、数据泄露与合规风险、系统崩溃由谁负责。你为方案做风险审视与兜底设计。' },
+  { id: 'innovator', name: '创新发散者', tagline: '脑洞·非主流方案', color: '#8b5cf6',
+    persona: '你是创新发散者(脑洞角色)，提出非主流、反直觉的方案：能不能不用常规组件、能不能反过来设计、有没有完全不同的路径。你负责打开可能性空间。' },
+  { id: 'historian', name: '历史对照者', tagline: '经验复盘·案例对照', color: '#f59e0b',
+    persona: '你是历史对照者(经验复盘者)，用过去的案例对照当前问题：这像不像早期某类产品的演进、与以往的推荐/搜索系统有何相似、过去失败的同类项目是怎么挂的。你用历史经验提供参照与教训。' }
 ];
 
 const ROLE_STYLES = [
@@ -97,10 +100,8 @@ const logContainer = document.getElementById('log-container');
 const crossRow = document.getElementById('cross-row');
 const discussionPanel = document.getElementById('discussion-panel');
 const discussionSummary = document.getElementById('discussion-summary');
-const roleSetup = document.getElementById('role-setup');
 const roleActive = document.getElementById('role-active');
 const roleSummaryPanel = document.getElementById('role-summary');
-const roleGrid = document.getElementById('role-grid');
 const startRoleBtn = document.getElementById('start-role-btn');
 const roleControls = document.getElementById('role-controls');
 
@@ -110,11 +111,9 @@ let ddKind = null;   // top-level: AI 圆桌 / 角色圆桌
 let ddMode = null;   // AI 圆桌 sub-mode (玩法)
 let ddAction = null;
 let ddSource = null;
-let ddRoleStyle = null;
-let ddRoleRounds = null;
-
-// Roles currently selected in the setup grid (Set of role ids)
-const selectedRoles = new Set();
+let ddRoles = null;       // 嘉宾 (role multi-select)
+let ddRoleStyle = null;   // 讨论模式
+let ddRoleRounds = null;  // 发言轮次
 
 // Discussion Mode State
 let discussionState = {
@@ -223,6 +222,7 @@ function createDropdown(root, { type, options, defaultSelected, defaultValue, on
       item.className = 'dropdown-item' + (connected ? '' : ' disabled-option');
       item.setAttribute('role', 'menuitem');
       item.dataset.value = opt.value;
+      if (opt.tagline) item.title = opt.tagline; // hover hint (e.g. role focus)
       if (!connected) {
         item.setAttribute('aria-disabled', 'true');
         item.tabIndex = -1; // skip non-actionable rows in keyboard tab order
@@ -401,6 +401,12 @@ function setupDropdowns() {
     onOpen: refreshConnections
   });
 
+  ddRoles = createDropdown(document.getElementById('dd-roles'), {
+    type: 'multi',
+    options: ROLE_PRESETS.map(r => ({ value: r.id, label: r.name, color: r.color, tagline: r.tagline })),
+    defaultSelected: ROLE_PRESETS.slice(0, 3).map(r => r.id)
+  });
+
   ddRoleStyle = createDropdown(document.getElementById('dd-role-style'), {
     type: 'single',
     options: ROLE_STYLES,
@@ -435,10 +441,14 @@ function applyMode() {
   ddAction.el.classList.toggle('hidden', !isMutualOrCross);
   crossRow.classList.toggle('hidden', isRole || subMode !== 'cross');
 
-  // Role mode: topic input + single-AI picker, dedicated setup panel below,
-  // no普通 send / file / action affordances. The active/summary panels are
-  // shown imperatively by the orchestration; a mode (re)entry resets to setup.
-  roleSetup.classList.toggle('hidden', !isRole);
+  // 角色圆桌 controls (嘉宾 / 讨论模式 / 发言轮次) share the same bottom bar as the
+  // AI 圆桌 dropdowns and only show in role mode.
+  if (ddRoles) ddRoles.el.classList.toggle('hidden', !isRole);
+  if (ddRoleStyle) ddRoleStyle.el.classList.toggle('hidden', !isRole);
+  if (ddRoleRounds) ddRoleRounds.el.classList.toggle('hidden', !isRole);
+
+  // Role mode reuses the topic input + single-AI picker; the active/summary
+  // panels are shown imperatively by the orchestration. A mode (re)entry resets.
   roleActive.classList.add('hidden');
   roleSummaryPanel.classList.add('hidden');
   // A mode (re)entry also clears any leftover discussion panels. (During an
@@ -874,6 +884,9 @@ function lockComposerForDiscussion(locked) {
   ddMode.setDisabled(locked);
   ddTarget.setDisabled(locked);
   ddAction.setDisabled(locked);
+  if (ddRoles) ddRoles.setDisabled(locked);
+  if (ddRoleStyle) ddRoleStyle.setDisabled(locked);
+  if (ddRoleRounds) ddRoleRounds.setDisabled(locked);
   messageInput.disabled = locked;
   sendBtn.disabled = locked;
 }
@@ -1238,60 +1251,11 @@ function roleById(id) {
 }
 
 function setupRoleRoundtable() {
-  buildRoleGrid();
   document.getElementById('start-role-btn').addEventListener('click', startRoleRoundtable);
   document.getElementById('role-next-btn').addEventListener('click', nextRoleRound);
   document.getElementById('role-summary-btn').addEventListener('click', generateRoleSummary);
   document.getElementById('role-end-btn').addEventListener('click', endRoleRoundtable);
   document.getElementById('role-new-btn').addEventListener('click', resetRoleRoundtable);
-}
-
-function buildRoleGrid() {
-  roleGrid.innerHTML = '';
-  selectedRoles.clear();
-  ROLE_PRESETS.forEach((role, i) => {
-    const on = i < 3; // default: first 3 selected (matches design)
-    if (on) selectedRoles.add(role.id);
-
-    const card = document.createElement('button');
-    card.type = 'button';
-    card.className = 'role-card' + (on ? ' selected' : '');
-    card.dataset.role = role.id;
-    card.setAttribute('aria-pressed', on ? 'true' : 'false');
-
-    const glyph = document.createElement('span');
-    glyph.className = 'role-glyph';
-    glyph.style.setProperty('--rc', role.color);
-    glyph.textContent = role.glyph;
-    const name = document.createElement('span');
-    name.className = 'role-name';
-    name.textContent = role.name;
-    const tag = document.createElement('span');
-    tag.className = 'role-tag';
-    tag.textContent = role.tagline;
-    card.append(glyph, name, tag);
-
-    card.addEventListener('click', () => {
-      if (roleState.active) return; // grid is locked while a roundtable runs
-      const nowOn = !selectedRoles.has(role.id);
-      if (nowOn) selectedRoles.add(role.id);
-      else selectedRoles.delete(role.id);
-      card.classList.toggle('selected', nowOn);
-      card.setAttribute('aria-pressed', nowOn ? 'true' : 'false');
-      updateStartRoleBtn();
-    });
-
-    roleGrid.appendChild(card);
-  });
-  updateStartRoleBtn();
-}
-
-function updateStartRoleBtn() {
-  document.getElementById('start-role-btn').disabled = selectedRoles.size < 2;
-}
-
-function selectedRolesInOrder() {
-  return ROLE_PRESETS.filter(r => selectedRoles.has(r.id)).map(r => r.id);
 }
 
 async function startRoleRoundtable() {
@@ -1301,10 +1265,10 @@ async function startRoleRoundtable() {
   }
 
   const topic = messageInput.value.trim();
-  const roles = selectedRolesInOrder();
+  const roles = ddRoles.getSelected(); // 嘉宾 dropdown (role ids, in preset order)
   const ai = ddTarget.getSelected()[0]; // 对象 is single-select in role mode
 
-  if (roles.length < 2) { log('请至少选择 2 个角色', 'error'); return; }
+  if (roles.length < 2) { log('请至少选择 2 个嘉宾(角色)', 'error'); return; }
   if (!topic) { log('请输入讨论话题', 'error'); return; }
   if (!ai) { log('请在“对象”中选择一个已连接的 AI 作为扮演者', 'error'); return; }
 
@@ -1322,7 +1286,6 @@ async function startRoleRoundtable() {
   lockComposerForDiscussion(true);
 
   roleSummaryPanel.classList.add('hidden');
-  roleSetup.classList.add('hidden');
   roleActive.classList.remove('hidden');
   setComposerAction('role-active'); // 下一轮 / 总结 / 结束 in the send slot
   document.getElementById('role-round-badge').textContent = '第 1 轮';

@@ -5,7 +5,7 @@
 
 > 让多个 AI 助手围桌讨论，交叉评价，深度协作
 
-一个 Chrome 扩展，让你像"会议主持人"一样，同时操控多个 AI（Claude、ChatGPT、Gemini），实现真正的 AI 圆桌会议。
+一个 Chrome 扩展，让你像"会议主持人"一样，同时操控多个 AI（Claude、ChatGPT、Gemini、DeepSeek），实现真正的 AI 圆桌会议。还支持让**单个 AI 扮演多个内置角色**自我互评。
 
 <!-- TODO: 添加 GIF 演示 -->
 <!-- ![Demo GIF](assets/demo.gif) -->
@@ -62,7 +62,7 @@ The focus is validating the **roundtable workflow**, not building software for i
 
 **EN**
 
-This project intentionally operates on the **web UIs** (Claude / ChatGPT / Gemini) instead of APIs.
+This project intentionally operates on the **web UIs** (Claude / ChatGPT / Gemini / DeepSeek) instead of APIs.
 
 In practice, **API and web chat often behave differently** — commonly due to model variants, hidden system settings, sampling parameters, or UI-specific features.
 
@@ -70,7 +70,7 @@ I'm currently most satisfied with, and calibrated to, the **web chat experience*
 
 **中文**
 
-这个项目刻意选择直接操作 **Claude / ChatGPT / Gemini 的网页端**，而不是使用 API。
+这个项目刻意选择直接操作 **Claude / ChatGPT / Gemini / DeepSeek 的网页端**，而不是使用 API。
 
 在实际使用中，**API 和 Web 端的表现往往并不一致**，常见原因包括：模型版本差异、隐藏的系统设置、采样参数，以及网页端特有的交互能力。
 
@@ -80,13 +80,14 @@ I'm currently most satisfied with, and calibrated to, the **web chat experience*
 
 ## 核心特性
 
-- **统一控制台** - 通过 Chrome 侧边栏同时管理多个 AI
-- **多目标发送** - 一条消息同时发给多个 AI，对比回答
-- **文件上传** - 同时向多个 AI 发送图片或文档附件
-- **互评模式** - 让所有 AI 互相评价，对等参与（/mutual 命令）
-- **交叉引用** - 让 Claude 评价 ChatGPT 的回答，或反过来
-- **讨论模式** - 两个 AI 就同一主题进行多轮深度讨论
-- **无需 API** - 直接操作网页界面，使用你现有的 AI 订阅
+- **统一控制台** — 通过 Chrome 侧边栏同时管理多个 AI，Claude 风格的浅色界面
+- **两种圆桌**（顶层「圆桌类型」下拉切换）：
+  - **AI 圆桌** — 多个真实 AI（Claude / ChatGPT / Gemini / DeepSeek）协作，含 4 种玩法：普通发送 / 互评 / 交叉引用 / 讨论
+  - **角色圆桌** — 单个 AI 依次扮演多个内置角色，围绕话题多轮互评（8 个角色，3 种讨论风格，1–3 轮）
+- **下拉式交互** — 对象、玩法、动作、嘉宾、风格、轮次均为底部栏下拉，风格统一
+- **连接状态感知** — 「对象」下拉实时显示各 AI 是否已连接（在线 / 未连接），未连接的自动置灰且不可选
+- **兼容老用法** — 普通发送仍支持 `@提及`、`/mutual`、`/cross` 命令
+- **无需 API** — 直接操作网页界面，使用你现有的 AI 订阅
 
 ---
 
@@ -94,19 +95,19 @@ I'm currently most satisfied with, and calibrated to, the **web chat experience*
 
 **中文**
 
-1. **普通模式**：同题多答，制造分歧
-2. **/mutual**：互相挑刺，逼出前提
-3. **@ 审计**：由你决定谁审谁
-4. **/cross**：两方围攻一方，压力测试
-5. **讨论模式**：只在需要时进行多轮辩论
+1. **普通发送**：同题多答，制造分歧
+2. **互评 / mutual**：互相挑刺，逼出前提
+3. **交叉引用**：由你决定谁审谁，两方围攻一方做压力测试
+4. **讨论**：只在需要时进行两 AI 多轮辩论
+5. **角色圆桌**：手头只有一个 AI 时，让它用多个角色（批判 / 落地 / 风险 …）自我审视
 
 **EN**
 
 1. **Normal** — Ask the same question to multiple models (create divergence)
-2. **/mutual** — Let models critique each other (expose assumptions)
-3. **@ audit** — You decide who audits whom
-4. **/cross** — Two models pressure-test one conclusion
-5. **Discussion** — Run multi-round debates only when needed
+2. **Mutual** — Let models critique each other (expose assumptions)
+3. **Cross-reference** — You decide who audits whom; pressure-test one conclusion
+4. **Discussion** — Run two-model multi-round debates only when needed
+5. **Role roundtable** — With a single model, have it self-review through multiple roles
 
 ---
 
@@ -129,130 +130,143 @@ I'm currently most satisfied with, and calibrated to, the **web chat experience*
 
 ### 准备工作
 
-1. 打开 Chrome，登录以下 AI 平台（根据需要）：
+1. 打开 Chrome，登录以下 AI 平台（按需）：
    - [Claude](https://claude.ai)
    - [ChatGPT](https://chatgpt.com)
    - [Gemini](https://gemini.google.com)
+   - [DeepSeek](https://chat.deepseek.com)
 
-2. 推荐使用 Chrome 的 Split Tab 功能，将 2 个 AI 页面并排显示
-
+2. 推荐使用 Chrome 的 Split Tab，将多个 AI 页面并排显示
 3. 点击扩展图标，打开侧边栏控制台
 
 ---
 
 ## 使用方法
 
-### 普通模式
-
-**基本发送**
-1. 勾选要发送的目标 AI（Claude / ChatGPT / Gemini）
-2. 输入消息
-3. 按 Enter 或点击「发送」按钮
-
-**@ 提及语法**
-- 点击 @ 按钮快速插入 AI 名称
-- 或手动输入：`@Claude 你怎么看这个问题？`
-
-**互评（推荐）**
-
-基于当前已有的回复，让所有选中的 AI 互相评价：
-```
-/mutual
-/mutual 重点分析优缺点
-```
-
-用法：
-1. 先发送一个问题给多个 AI，等待它们各自回复
-2. 点击 `/mutual` 按钮或输入 `/mutual`
-3. 每个 AI 都会收到其他 AI 的回复并进行评价
-   - 2 AI：A 评价 B，B 评价 A
-   - 3 AI：A 评价 BC，B 评价 AC，C 评价 AB
-
-**交叉引用（单向）**
-
-两个 AI（自动检测）：
-```
-@Claude 评价一下 @ChatGPT
-```
-最后 @ 的是来源（被评价），前面的是目标（评价者）
-
-三个 AI（使用 /cross 命令）：
-```
-/cross @Claude @Gemini <- @ChatGPT 评价一下
-/cross @ChatGPT <- @Claude @Gemini 对比一下
-```
-
-**动作下拉菜单**：快速插入预设动作词（评价/借鉴/批评/补充/对比）
-
-### 讨论模式
-
-让两个 AI 就同一主题进行深度辩论：
-
-1. 点击顶部「讨论」切换到讨论模式
-2. 选择 2 个参与讨论的 AI
-3. 输入讨论主题
-4. 点击「开始讨论」
-
-**讨论流程**
+侧边栏顶部是一个 Claude 风格的输入卡片，底部一排下拉控制：
 
 ```
-第 1 轮: 两个 AI 各自阐述观点
-第 2 轮: 互相评价对方的观点
-第 3 轮: 回应对方的评价，深化讨论
-...
-总结: 双方各自生成讨论总结
+[ 输入消息 / 话题 … ]
+ [对象 ▾] [圆桌类型 ▾] [玩法 ▾] …                         ➤
 ```
+
+- **圆桌类型**：在 **AI 圆桌** 与 **角色圆桌** 之间切换（两者同级）。
+- 选 **AI 圆桌** 时，出现「玩法」下拉；选 **角色圆桌** 时，出现「嘉宾 / 讨论模式 / 发言轮次」下拉。
+
+### AI 圆桌
+
+**对象**：多选下拉，选择要参与的 AI；下拉里实时显示每个 AI 的连接状态，未连接的不可选。
+
+**玩法**（下拉）：
+
+- **普通发送** — 发给所选对象。也支持手打命令：
+  - `@Claude 你怎么看这个问题？`（@ 提及指定目标）
+  - `/mutual` 或 `/mutual 重点分析优缺点`（互评，见下）
+  - `/cross @Claude @Gemini <- @ChatGPT 评价一下`（交叉引用，见下）
+- **互评** — 基于各 AI 当前的回复，让所选对象互相评价：
+  - 2 个 AI：A 评 B，B 评 A
+  - 3 个 AI：A 评 BC，B 评 AC，C 评 AB
+  - 可配合「动作」下拉插入预设动作词（评价 / 借鉴 / 批评 / 补充 / 对比）
+- **交叉引用** — 让「对象」评价指定「来源」AI 的最新回复（单向）。
+- **讨论** — 选正好 2 个对象 + 输入主题，两 AI 多轮辩论：
+
+  ```
+  第 1 轮: 两个 AI 各自阐述观点
+  第 2 轮: 互相评价对方的观点
+  ...
+  生成总结: 双方各自总结讨论
+  ```
+
+### 角色圆桌（单 AI 多角色）
+
+让**一个 AI** 依次扮演多个内置角色，围绕同一话题互评：
+
+1. 「圆桌类型」选 **角色圆桌**
+2. 「对象」选 **一个**已连接的 AI（由它扮演所有角色）
+3. 「嘉宾」选 **≥2 个角色**（默认选中前 3 个）
+4. 「讨论模式」选风格：**辩论（各执一词） / 圆桌（互相补充） / 问答（互相追问）**
+5. 「发言轮次」选 **每人 1 / 2 / 3 轮**
+6. 点「开始」→ 该 AI 顺序扮演各角色逐个发言（看到此前的完整转录），一轮跑完后点「下一轮」推进，随时可「生成总结」或「结束」
+
+**8 个内置角色：**
+
+| 角色 | 定位 |
+|------|------|
+| 批判性思考者 | 挑刺，找漏洞、反例与隐藏假设 |
+| 系统设计者 | 把观点结构化、模块化 |
+| 落地执行者 | 关注能不能做、怎么做 |
+| 数据分析师 | 用数据与证据说话 |
+| 产品经理 | 把一切拉回用户价值 |
+| 风险控制者 | 设想最坏情况、做兜底 |
+| 创新发散者 | 提出非主流、反直觉方案 |
+| 历史对照者 | 用过去案例对照当前问题 |
+
+> 角色的提示词全部内置，无需配置。
 
 ---
 
 ## 技术架构
 
+三个进程边界，仅通过 `chrome.runtime.sendMessage` 通信：
+
+```
+sidepanel/panel.js  <──>  background.js (SW)  <──>  content/{claude,chatgpt,gemini,deepseek}.js
+      (UI · 状态)          (消息路由 · 缓存)         (按 AI 注入 DOM · 捕获回复)
+```
+
 ```
 ai-roundtable/
 ├── manifest.json           # Chrome 扩展配置 (Manifest V3)
-├── background.js           # Service Worker 消息中转
+├── background.js           # Service Worker，消息路由 + 会话缓存
 ├── sidepanel/
-│   ├── panel.html         # 侧边栏 UI
-│   ├── panel.css          # 样式
-│   └── panel.js           # 控制逻辑
+│   ├── panel.html          # 侧边栏 UI
+│   ├── panel.css           # 样式（Claude 风格浅色主题）
+│   └── panel.js            # 全部 UI 状态与命令解析
 ├── content/
-│   ├── claude.js          # Claude 页面注入脚本
-│   ├── chatgpt.js         # ChatGPT 页面注入脚本
-│   └── gemini.js          # Gemini 页面注入脚本
+│   ├── claude.js           # Claude 页面注入脚本
+│   ├── chatgpt.js          # ChatGPT 页面注入脚本
+│   ├── gemini.js           # Gemini 页面注入脚本
+│   └── deepseek.js         # DeepSeek 页面注入脚本
 └── icons/                  # 扩展图标
 ```
+
+无构建步骤、无依赖：「开发」即在 `chrome://extensions/` 重新加载未打包扩展，并刷新目标 AI 标签页。
 
 ---
 
 ## 隐私说明
 
-- **不上传任何内容** - 扩展完全在本地运行，不向任何服务器发送数据
-- **无遥测/日志采集** - 不收集使用数据、不追踪行为
-- **数据存储位置** - 仅使用浏览器本地存储（chrome.storage.local）
-- **无第三方服务** - 不依赖任何外部 API 或服务
-- **如何删除数据** - 卸载扩展即可完全清除，或在 Chrome 扩展设置中清除存储
+- **不上传任何内容** — 扩展完全在本地运行，不向任何服务器发送数据
+- **无遥测 / 日志采集** — 不收集使用数据、不追踪行为
+- **数据存储位置** — 仅使用浏览器本地存储（`chrome.storage`）
+- **无第三方服务** — 不依赖任何外部 API 或服务
+- **如何删除数据** — 卸载扩展即可完全清除，或在 Chrome 扩展设置中清除存储
 
 ---
 
 ## 常见问题
 
-### Q: 安装后无法连接 AI 页面？
-**A:** 安装或更新扩展后，需要刷新已打开的 AI 页面。
+### Q: 安装或更新后无法连接 AI 页面？
+**A:** 内容脚本只会自动注入到扩展加载之后打开的页面。安装 / 更新 / 重载扩展后，请**刷新已打开的 AI 标签页**。「对象」下拉里会实时显示连接状态。
 
-### Q: 交叉引用时提示"无法获取回复"？
-**A:** 确保源 AI 已经有回复。系统会获取该 AI 的最新一条回复。
+### Q: 交叉引用 / 互评时提示"无法获取回复"？
+**A:** 确保来源 AI 已经有回复。系统会读取该 AI 当前最新的一条回复。
 
-### Q: ChatGPT 回复很长时会超时吗？
-**A:** 不会。系统支持最长 10 分钟的回复捕获。
+### Q: AI 回复很长时会超时吗？
+**A:** 不会。单条回复最长支持 10 分钟的捕获。
+
+### Q: 角色圆桌可以用哪个 AI？
+**A:** 任意一个已连接的 AI 都可以；在「对象」里选一个即可，由它扮演你选中的全部角色。
 
 ---
 
 ## 已知限制
 
-- 依赖各 AI 平台的 DOM 结构，平台更新可能导致功能失效
+- 依赖各 AI 平台的 DOM 结构，平台更新可能导致功能失效（按 `content/<ai>.js` 单独修复）
 - 讨论模式固定 2 个参与者
+- 角色圆桌为单 AI 顺序发言，多角色 + 多轮时整体耗时较长
 - 不支持 Claude Artifacts、ChatGPT Canvas 等特殊功能
-- **Gemini 不支持自动文件上传** - 由于 Google 的安全限制，Gemini 需要手动上传文件（Claude 和 ChatGPT 正常支持）
+- 不含文件上传功能
 
 ---
 
