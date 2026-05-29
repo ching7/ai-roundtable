@@ -1,14 +1,52 @@
-// AI Panel - Side Panel Controller
+// AI Panel - Side Panel Controller (Claude-style UI)
 
 const AI_TYPES = ['claude', 'chatgpt', 'gemini', 'deepseek'];
 
-// Cross-reference action keywords (inserted into message)
+// AI brand metadata (display name + dropdown dot color)
+const AI_META = {
+  claude:   { name: 'Claude',   color: 'var(--ai-claude)' },
+  chatgpt:  { name: 'ChatGPT',  color: 'var(--ai-chatgpt)' },
+  gemini:   { name: 'Gemini',   color: 'var(--ai-gemini)' },
+  deepseek: { name: 'DeepSeek', color: 'var(--ai-deepseek)' }
+};
+
+// Cross-reference action keywords (used as default prompt in 互评 / 交叉引用)
 const CROSS_REF_ACTIONS = {
   evaluate: { prompt: '评价一下' },
   learn: { prompt: '有什么值得借鉴的' },
   critique: { prompt: '批评一下，指出问题' },
   supplement: { prompt: '有什么遗漏需要补充' },
   compare: { prompt: '对比一下你的观点' }
+};
+
+const MODE_OPTIONS = [
+  { value: 'normal', label: '普通发送' },
+  { value: 'mutual', label: '互评' },
+  { value: 'cross', label: '交叉引用' },
+  { value: 'discussion', label: '讨论' }
+];
+
+const ACTION_OPTIONS = [
+  { value: '', label: '动作(可选)' },
+  { value: 'evaluate', label: '评价' },
+  { value: 'learn', label: '借鉴' },
+  { value: 'critique', label: '批评' },
+  { value: 'supplement', label: '补充' },
+  { value: 'compare', label: '对比' }
+];
+
+const MODE_PLACEHOLDERS = {
+  normal: '输入消息…（可用 @Claude、/mutual 等命令）',
+  mutual: '互评提示（可留空，默认让各方互相评价）…',
+  cross: '附加提示（可留空）…',
+  discussion: '输入讨论主题…（需在“对象”中选择 2 位参与者）'
+};
+
+const SEND_TITLES = {
+  normal: '发送',
+  mutual: '发送互评',
+  cross: '发送交叉引用',
+  discussion: '开始讨论'
 };
 
 // DOM Elements
@@ -18,6 +56,15 @@ const logContainer = document.getElementById('log-container');
 const fileInput = document.getElementById('file-input');
 const addFileBtn = document.getElementById('add-file-btn');
 const fileList = document.getElementById('file-list');
+const crossRow = document.getElementById('cross-row');
+const discussionPanel = document.getElementById('discussion-panel');
+const discussionSummary = document.getElementById('discussion-summary');
+
+// Dropdown controllers (assigned in setupDropdowns)
+let ddTarget = null;
+let ddMode = null;
+let ddAction = null;
+let ddSource = null;
 
 // Selected files storage
 let selectedFiles = [];
@@ -26,7 +73,8 @@ let selectedFiles = [];
 const connectedTabs = {
   claude: null,
   chatgpt: null,
-  gemini: null
+  gemini: null,
+  deepseek: null
 };
 
 // Discussion Mode State
@@ -35,25 +83,220 @@ let discussionState = {
   topic: '',
   participants: [],  // [ai1, ai2]
   currentRound: 0,
-  history: [],  // [{round, ai, type: 'initial'|'evaluation'|'response', content}]
-  pendingResponses: new Set(),  // AIs we're waiting for
-  roundType: null  // 'initial', 'cross-eval', 'counter'
+  history: [],  // [{round, ai, type, content}]
+  pendingResponses: new Set(),
+  roundType: null,  // 'initial' | 'cross-eval' | 'summary'
+  summaryTimer: null  // setInterval handle for generateSummary polling
 };
 
 
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
+  setupMessageListener();
+  setupDropdowns();
   checkConnectedTabs();
-  setupEventListeners();
-  setupDiscussionMode();
+  setupComposer();
+  setupDiscussionControls();
   setupFileUpload();
+  applyMode('normal');
 });
 
-function setupEventListeners() {
+// ============================================
+// Dropdown Component
+// ============================================
+
+const dropdownRegistry = [];
+
+function closeAllDropdowns(exceptRoot) {
+  dropdownRegistry.forEach(api => {
+    if (api.el !== exceptRoot) api.close();
+  });
+}
+
+function createDropdown(root, { type, options, defaultSelected, defaultValue, onChange }) {
+  const trigger = root.querySelector('.dropdown-trigger');
+  const menu = root.querySelector('.dropdown-menu');
+  const labelEl = trigger.querySelector('.dropdown-label');
+
+  const selected = new Set(type === 'multi' ? (defaultSelected || []) : []);
+  let value = type === 'single' ? (defaultValue ?? (options[0] && options[0].value)) : null;
+  let disabled = false;
+
+  function getSelected() {
+    return options.map(o => o.value).filter(v => selected.has(v));
+  }
+
+  function updateLabel() {
+    if (type === 'multi') {
+      const arr = getSelected();
+      if (arr.length === 0) {
+        labelEl.textContent = '未选';
+      } else if (arr.length === options.length) {
+        labelEl.textContent = '全部';
+      } else {
+        const first = options.find(o => o.value === arr[0]);
+        labelEl.textContent = arr.length === 1 ? first.label : `${first.label} +${arr.length - 1}`;
+      }
+    } else {
+      const opt = options.find(o => o.value === value);
+      labelEl.textContent = opt ? opt.label : '';
+    }
+  }
+
+  function renderMenu() {
+    menu.innerHTML = '';
+    options.forEach(opt => {
+      const item = document.createElement('button');
+      item.type = 'button';
+      item.className = 'dropdown-item';
+      item.setAttribute('role', 'menuitem');
+      item.dataset.value = opt.value;
+
+      let inner = '';
+      if (opt.color) {
+        inner += `<span class="brand-dot" data-ai="${opt.value}" style="--dot:${opt.color}"></span>`;
+      }
+      inner += `<span class="item-label"></span>`;
+      if (type === 'multi') inner += `<span class="check">✓</span>`;
+      item.innerHTML = inner;
+      item.querySelector('.item-label').textContent = opt.label;
+
+      const isSel = type === 'multi' ? selected.has(opt.value) : value === opt.value;
+      item.classList.toggle('selected', isSel);
+
+      item.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (type === 'multi') {
+          if (selected.has(opt.value)) selected.delete(opt.value);
+          else selected.add(opt.value);
+          item.classList.toggle('selected');
+          updateLabel();
+          if (onChange) onChange(getSelected());
+        } else {
+          value = opt.value;
+          menu.querySelectorAll('.dropdown-item').forEach(i =>
+            i.classList.toggle('selected', i.dataset.value === value)
+          );
+          updateLabel();
+          close();
+          if (onChange) onChange(value);
+        }
+      });
+
+      menu.appendChild(item);
+    });
+  }
+
+  function open() {
+    if (disabled) return;
+    closeAllDropdowns(root);
+    const rect = trigger.getBoundingClientRect();
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const menuWidth = 176; // min-width 160 + padding/border
+    root.classList.toggle('drop-up', spaceBelow < 300 && rect.top > 300);
+    root.classList.toggle('drop-right', rect.left + menuWidth > window.innerWidth - 8);
+    root.classList.add('open');
+    trigger.setAttribute('aria-expanded', 'true');
+  }
+
+  function close() {
+    root.classList.remove('open');
+    trigger.setAttribute('aria-expanded', 'false');
+  }
+
+  function toggle() {
+    root.classList.contains('open') ? close() : open();
+  }
+
+  trigger.addEventListener('click', (e) => {
+    e.stopPropagation();
+    toggle();
+  });
+  menu.addEventListener('click', (e) => e.stopPropagation());
+  // Close when keyboard focus leaves the dropdown entirely (Tab-away).
+  // Guard on relatedTarget so mouse clicks (null relatedTarget) don't pre-close.
+  root.addEventListener('focusout', (e) => {
+    if (e.relatedTarget && !root.contains(e.relatedTarget)) close();
+  });
+
+  renderMenu();
+  updateLabel();
+
+  const api = {
+    el: root,
+    getSelected,
+    getValue: () => value,
+    setValue: (v) => { value = v; renderMenu(); updateLabel(); },
+    setSelected: (arr) => { selected.clear(); arr.forEach(v => selected.add(v)); renderMenu(); updateLabel(); },
+    setDisabled: (d) => {
+      disabled = d;
+      root.classList.toggle('disabled', d);
+      trigger.disabled = d;
+      if (d) close();
+    },
+    setStatus: (ai, connected) => {
+      const dot = menu.querySelector(`.brand-dot[data-ai="${ai}"]`);
+      if (dot) dot.classList.toggle('offline', !connected);
+    },
+    close
+  };
+
+  dropdownRegistry.push(api);
+  return api;
+}
+
+function setupDropdowns() {
+  const targetOptions = AI_TYPES.map(ai => ({ value: ai, label: AI_META[ai].name, color: AI_META[ai].color }));
+
+  ddTarget = createDropdown(document.getElementById('dd-target'), {
+    type: 'multi',
+    options: targetOptions,
+    defaultSelected: [...AI_TYPES]
+  });
+
+  ddMode = createDropdown(document.getElementById('dd-mode'), {
+    type: 'single',
+    options: MODE_OPTIONS,
+    defaultValue: 'normal',
+    onChange: (v) => applyMode(v)
+  });
+
+  ddAction = createDropdown(document.getElementById('dd-action'), {
+    type: 'single',
+    options: ACTION_OPTIONS,
+    defaultValue: ''
+  });
+
+  ddSource = createDropdown(document.getElementById('dd-source'), {
+    type: 'single',
+    options: targetOptions,
+    defaultValue: AI_TYPES[0]
+  });
+
+  document.addEventListener('click', () => closeAllDropdowns());
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeAllDropdowns();
+  });
+}
+
+function applyMode(mode) {
+  const isMutualOrCross = mode === 'mutual' || mode === 'cross';
+  ddAction.el.classList.toggle('hidden', !isMutualOrCross);
+  crossRow.classList.toggle('hidden', mode !== 'cross');
+
+  messageInput.placeholder = MODE_PLACEHOLDERS[mode] || '输入消息…';
+  sendBtn.title = SEND_TITLES[mode] || '发送';
+  sendBtn.setAttribute('aria-label', SEND_TITLES[mode] || '发送');
+}
+
+// ============================================
+// Composer / Send Routing
+// ============================================
+
+function setupComposer() {
   sendBtn.addEventListener('click', handleSend);
 
-  // Enter to send, Shift+Enter for new line (like ChatGPT)
-  // But ignore Enter during IME composition (e.g., Chinese input)
+  // Enter to send, Shift+Enter for new line; ignore during IME composition
   messageInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
       e.preventDefault();
@@ -61,180 +304,144 @@ function setupEventListeners() {
     }
   });
 
-  // Shortcut buttons (/cross, <-)
-  document.querySelectorAll('.shortcut-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const insertText = btn.dataset.insert;
-      const cursorPos = messageInput.selectionStart;
-      const textBefore = messageInput.value.substring(0, cursorPos);
-      const textAfter = messageInput.value.substring(cursorPos);
-
-      messageInput.value = textBefore + insertText + textAfter;
-      messageInput.focus();
-      messageInput.selectionStart = messageInput.selectionEnd = cursorPos + insertText.length;
-    });
-  });
-
-  // Action select - insert action prompt into textarea
-  document.getElementById('action-select').addEventListener('change', (e) => {
-    const action = e.target.value;
-    if (!action) return;
-
-    const actionConfig = CROSS_REF_ACTIONS[action];
-    if (actionConfig) {
-      const cursorPos = messageInput.selectionStart;
-      const textBefore = messageInput.value.substring(0, cursorPos);
-      const textAfter = messageInput.value.substring(cursorPos);
-
-      // Add space before if needed
-      const needsSpace = textBefore.length > 0 && !textBefore.endsWith(' ') && !textBefore.endsWith('\n');
-      const insertText = (needsSpace ? ' ' : '') + actionConfig.prompt + ' ';
-
-      messageInput.value = textBefore + insertText + textAfter;
-      messageInput.focus();
-      messageInput.selectionStart = messageInput.selectionEnd = cursorPos + insertText.length;
-    }
-
-    // Reset select to placeholder
-    e.target.value = '';
-  });
-
-  // Mention buttons - insert @AI into textarea
-  document.querySelectorAll('.mention-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const mention = btn.dataset.mention;
-      const cursorPos = messageInput.selectionStart;
-      const textBefore = messageInput.value.substring(0, cursorPos);
-      const textAfter = messageInput.value.substring(cursorPos);
-
-      // Add space before if needed
-      const needsSpace = textBefore.length > 0 && !textBefore.endsWith(' ') && !textBefore.endsWith('\n');
-      const insertText = (needsSpace ? ' ' : '') + mention + ' ';
-
-      messageInput.value = textBefore + insertText + textAfter;
-      messageInput.focus();
-      messageInput.selectionStart = messageInput.selectionEnd = cursorPos + insertText.length;
-    });
-  });
-
-  // Listen for messages from background script
-  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    if (message.type === 'TAB_STATUS_UPDATE') {
-      updateTabStatus(message.aiType, message.connected);
-    } else if (message.type === 'RESPONSE_CAPTURED') {
-      log(`${message.aiType}: Response captured`, 'success');
-      // Handle discussion mode response
-      if (discussionState.active && discussionState.pendingResponses.has(message.aiType)) {
-        handleDiscussionResponse(message.aiType, message.content);
-      }
-    } else if (message.type === 'SEND_RESULT') {
-      if (message.success) {
-        log(`${message.aiType}: Message sent`, 'success');
-      } else {
-        log(`${message.aiType}: Failed - ${message.error}`, 'error');
-      }
-    }
+  // Auto-grow textarea
+  messageInput.addEventListener('input', () => {
+    messageInput.style.height = 'auto';
+    messageInput.style.height = Math.min(messageInput.scrollHeight, 220) + 'px';
   });
 }
 
-async function checkConnectedTabs() {
-  try {
-    const tabs = await chrome.tabs.query({});
-
-    for (const tab of tabs) {
-      const aiType = getAITypeFromUrl(tab.url);
-      if (aiType) {
-        connectedTabs[aiType] = tab.id;
-        updateTabStatus(aiType, true);
-      }
-    }
-  } catch (err) {
-    log('Error checking tabs: ' + err.message, 'error');
+async function maybeSendFiles(recipients) {
+  const filesToSend = [...selectedFiles];
+  if (filesToSend.length === 0) return;
+  log(`正在上传 ${filesToSend.length} 个文件...`);
+  for (const target of recipients) {
+    await sendFilesToAI(target, filesToSend);
   }
+  clearFiles();
+  // Wait a bit for files to be processed before sending message
+  await new Promise(r => setTimeout(r, 500));
 }
 
-function getAITypeFromUrl(url) {
-  if (!url) return null;
-  if (url.includes('claude.ai')) return 'claude';
-  if (url.includes('chat.openai.com') || url.includes('chatgpt.com')) return 'chatgpt';
-  if (url.includes('gemini.google.com')) return 'gemini';
-  if (url.includes('chat.deepseek.com')) return 'deepseek';
-  return null;
-}
-
-function updateTabStatus(aiType, connected) {
-  const statusEl = document.getElementById(`status-${aiType}`);
-  if (statusEl) {
-    // Status is now a dot indicator, no text needed
-    statusEl.className = 'status ' + (connected ? 'connected' : 'disconnected');
-    statusEl.title = connected ? '已连接' : '未找到';
-  }
-  if (connected) {
-    connectedTabs[aiType] = true;
-  }
+function resetComposerHeight() {
+  messageInput.style.height = 'auto';
 }
 
 async function handleSend() {
-  const message = messageInput.value.trim();
-  if (!message) return;
+  // Prevent re-entry (e.g. a second Enter press) while a send is already in flight.
+  if (sendBtn.disabled) return;
 
-  // Parse message for @ mentions
-  const parsed = parseMessage(message);
+  const mode = ddMode.getValue();
 
-  // Determine targets
-  let targets;
-  if (parsed.mentions.length > 0) {
-    // If @ mentioned specific AIs, only send to those
-    targets = parsed.mentions;
-  } else {
-    // Otherwise use checkbox selection
-    targets = AI_TYPES.filter(ai => {
-      const checkbox = document.getElementById(`target-${ai}`);
-      return checkbox && checkbox.checked;
-    });
-  }
-
-  if (targets.length === 0) {
-    log('No targets selected', 'error');
+  if (mode === 'discussion') {
+    await startDiscussionFromComposer();
     return;
   }
 
-  sendBtn.disabled = true;
+  const rawMessage = messageInput.value.trim();
+  const selected = ddTarget.getSelected();
+  const action = ddAction.getValue();
+  const actionPrompt = (action && CROSS_REF_ACTIONS[action]) ? CROSS_REF_ACTIONS[action].prompt : '';
 
-  // Clear input immediately after sending
-  messageInput.value = '';
-
-  // Send files first if any
-  const filesToSend = [...selectedFiles];
-  if (filesToSend.length > 0) {
-    log(`正在上传 ${filesToSend.length} 个文件...`);
-    for (const target of targets) {
-      await sendFilesToAI(target, filesToSend);
+  // ----- 互评 -----
+  if (mode === 'mutual') {
+    if (selected.length < 2) {
+      log('互评需要至少选择 2 个 AI', 'error');
+      return;
     }
-    clearFiles();
-    // Wait a bit for files to be processed before sending message
-    await new Promise(r => setTimeout(r, 500));
+    sendBtn.disabled = true;
+    messageInput.value = '';
+    resetComposerHeight();
+    await maybeSendFiles(selected);
+    const prompt = rawMessage || actionPrompt || '请评价以上观点。你同意什么？不同意什么？有什么补充？';
+    try {
+      log(`互评: ${selected.join(', ')}`);
+      await handleMutualReview(selected, prompt);
+    } catch (err) {
+      log('Error: ' + err.message, 'error');
+    }
+    sendBtn.disabled = false;
+    messageInput.focus();
+    return;
   }
 
-  try {
-    // If mutual review, handle specially
-    if (parsed.mutual) {
-      if (targets.length < 2) {
-        log('Mutual review requires at least 2 AIs selected', 'error');
-      } else {
-        log(`Mutual review: ${targets.join(', ')}`);
-        await handleMutualReview(targets, parsed.prompt);
-      }
+  // ----- 交叉引用 -----
+  if (mode === 'cross') {
+    const sourceAI = ddSource.getValue();
+    const targetAIs = selected.filter(a => a !== sourceAI);
+    if (!sourceAI) {
+      log('交叉引用:请选择来源 AI', 'error');
+      return;
     }
-    // If cross-reference, handle specially
-    else if (parsed.crossRef) {
-      log(`Cross-reference: ${parsed.targetAIs.join(', ')} <- ${parsed.sourceAIs.join(', ')}`);
+    if (targetAIs.length === 0) {
+      log('交叉引用:请在“对象”里选择至少一个评价方(不能只选来源)', 'error');
+      return;
+    }
+    sendBtn.disabled = true;
+    messageInput.value = '';
+    resetComposerHeight();
+    await maybeSendFiles(targetAIs);
+    const text = [rawMessage, actionPrompt].filter(Boolean).join(' ').trim() || '请参考以下回复并给出你的看法';
+    const parsed = {
+      crossRef: true,
+      targetAIs,
+      sourceAIs: [sourceAI],
+      originalMessage: text,
+      mentions: [...targetAIs, sourceAI]
+    };
+    try {
+      log(`交叉引用: ${targetAIs.join(', ')} <- ${sourceAI}`);
+      await handleCrossReference(parsed);
+    } catch (err) {
+      log('Error: ' + err.message, 'error');
+    }
+    sendBtn.disabled = false;
+    messageInput.focus();
+    return;
+  }
+
+  // ----- 普通发送 (preserve typed @mention / slash commands) -----
+  if (!rawMessage) return;
+
+  const parsed = parseMessage(rawMessage);
+
+  let targets;
+  if (parsed.mentions && parsed.mentions.length > 0) {
+    targets = parsed.mentions;
+  } else {
+    targets = selected;
+  }
+
+  if (targets.length === 0) {
+    log('没有选择目标 AI', 'error');
+    return;
+  }
+
+  // Validate before uploading files so an aborted review keeps the attachments.
+  if (parsed.mutual && targets.length < 2) {
+    log('互评需要至少选择 2 个 AI', 'error');
+    return;
+  }
+
+  // Files go only to AIs that receive the prompt; a /cross source is read, not sent files.
+  const fileRecipients = parsed.crossRef ? parsed.targetAIs : targets;
+
+  sendBtn.disabled = true;
+  messageInput.value = '';
+  resetComposerHeight();
+  await maybeSendFiles(fileRecipients);
+
+  try {
+    if (parsed.mutual) {
+      log(`互评: ${targets.join(', ')}`);
+      await handleMutualReview(targets, parsed.prompt);
+    } else if (parsed.crossRef) {
+      log(`交叉引用: ${parsed.targetAIs.join(', ')} <- ${parsed.sourceAIs.join(', ')}`);
       await handleCrossReference(parsed);
     } else {
-      // Send to target(s)
-      log(`Sending to: ${targets.join(', ')}`);
+      log(`发送至: ${targets.join(', ')}`);
       for (const target of targets) {
-        await sendToAI(target, message);
+        await sendToAI(target, rawMessage);
       }
     }
   } catch (err) {
@@ -246,11 +453,9 @@ async function handleSend() {
 }
 
 function parseMessage(message) {
-  // Check for /mutual command: /mutual [optional prompt]
-  // Triggers mutual review based on current responses (no new topic needed)
+  // /mutual [optional prompt] — mutual review based on current responses
   const trimmedMessage = message.trim();
   if (trimmedMessage.toLowerCase() === '/mutual' || trimmedMessage.toLowerCase().startsWith('/mutual ')) {
-    // Extract everything after "/mutual " as the prompt
     const prompt = trimmedMessage.length > 7 ? trimmedMessage.substring(7).trim() : '';
     return {
       mutual: true,
@@ -261,30 +466,23 @@ function parseMessage(message) {
     };
   }
 
-  // Check for /cross command first: /cross @targets <- @sources message
-  // Use this for complex cases (3 AIs, or when you want to be explicit)
+  // /cross @targets <- @sources message
   if (message.trim().toLowerCase().startsWith('/cross ')) {
     const arrowIndex = message.indexOf('<-');
     if (arrowIndex === -1) {
-      // No arrow found, treat as regular message
       return { crossRef: false, mentions: [], originalMessage: message };
     }
 
-    const beforeArrow = message.substring(7, arrowIndex).trim(); // Skip "/cross "
-    const afterArrow = message.substring(arrowIndex + 2).trim();  // Skip "<-"
+    const beforeArrow = message.substring(7, arrowIndex).trim();
+    const afterArrow = message.substring(arrowIndex + 2).trim();
 
-    // Extract targets (before arrow)
     const mentionPattern = /@(claude|chatgpt|gemini|deepseek)/gi;
     const targetMatches = [...beforeArrow.matchAll(mentionPattern)];
     const targetAIs = [...new Set(targetMatches.map(m => m[1].toLowerCase()))];
 
-    // Extract sources and message (after arrow)
-    // Find all @mentions in afterArrow, sources are all @mentions
-    // Message is everything after the last @mention
     const sourceMatches = [...afterArrow.matchAll(mentionPattern)];
     const sourceAIs = [...new Set(sourceMatches.map(m => m[1].toLowerCase()))];
 
-    // Find where the actual message starts (after the last @mention)
     let actualMessage = afterArrow;
     if (sourceMatches.length > 0) {
       const lastMatch = sourceMatches[sourceMatches.length - 1];
@@ -303,13 +501,12 @@ function parseMessage(message) {
     }
   }
 
-  // Pattern-based detection for @ mentions
+  // @ mentions
   const mentionPattern = /@(claude|chatgpt|gemini|deepseek)/gi;
   const matches = [...message.matchAll(mentionPattern)];
   const mentions = [...new Set(matches.map(m => m[1].toLowerCase()))];
 
-  // For exactly 2 AIs: use keyword detection (simpler syntax)
-  // Last mentioned = source (being evaluated), first = target (doing evaluation)
+  // Exactly 2 AIs + eval keyword → 2-AI cross-reference shortcut
   if (mentions.length === 2) {
     const evalKeywords = /评价|看看|怎么样|怎么看|如何|讲的|说的|回答|赞同|同意|分析|认为|观点|看法|意见|借鉴|批评|补充|对比|evaluate|think of|opinion|review|agree|analysis|compare|learn from/i;
 
@@ -327,8 +524,6 @@ function parseMessage(message) {
     }
   }
 
-  // For 3+ AIs without /cross command: just send to all (no cross-reference)
-  // User should use /cross command for complex 3-AI scenarios
   return {
     crossRef: false,
     mentions,
@@ -337,19 +532,17 @@ function parseMessage(message) {
 }
 
 async function handleCrossReference(parsed) {
-  // Get responses from all source AIs
   const sourceResponses = [];
 
   for (const sourceAI of parsed.sourceAIs) {
     const response = await getLatestResponse(sourceAI);
     if (!response) {
-      log(`Could not get ${sourceAI}'s response`, 'error');
+      log(`无法获取 ${sourceAI} 的回复`, 'error');
       return;
     }
     sourceResponses.push({ ai: sourceAI, content: response });
   }
 
-  // Build the full message with XML tags for each source
   let fullMessage = parsed.originalMessage + '\n';
 
   for (const source of sourceResponses) {
@@ -359,39 +552,35 @@ ${source.content}
 </${source.ai}_response>`;
   }
 
-  // Send to all target AIs
   for (const targetAI of parsed.targetAIs) {
     await sendToAI(targetAI, fullMessage);
   }
 }
 
 // ============================================
-// Mutual Review Functions
+// Mutual Review
 // ============================================
 
 async function handleMutualReview(participants, prompt) {
-  // Get current responses from all participants
   const responses = {};
 
-  log(`[Mutual] Fetching responses from ${participants.join(', ')}...`);
+  log(`[互评] 正在获取 ${participants.join(', ')} 的回复...`);
 
   for (const ai of participants) {
     const response = await getLatestResponse(ai);
     if (!response || response.trim().length === 0) {
-      log(`[Mutual] Could not get ${ai}'s response - make sure ${ai} has replied first`, 'error');
+      log(`[互评] 无法获取 ${ai} 的回复 - 请确认 ${ai} 已先回复`, 'error');
       return;
     }
     responses[ai] = response;
-    log(`[Mutual] Got ${ai}'s response (${response.length} chars)`);
+    log(`[互评] 已获取 ${ai} 的回复 (${response.length} 字)`);
   }
 
-  log(`[Mutual] All responses collected. Sending cross-evaluations...`);
+  log(`[互评] 全部回复已收集，正在发送交叉评价...`);
 
-  // For each AI, send them the responses from all OTHER AIs
   for (const targetAI of participants) {
     const otherAIs = participants.filter(ai => ai !== targetAI);
 
-    // Build message with all other AIs' responses
     let evalMessage = `以下是其他 AI 的观点：\n`;
 
     for (const sourceAI of otherAIs) {
@@ -404,11 +593,11 @@ ${responses[sourceAI]}
 
     evalMessage += `\n${prompt}`;
 
-    log(`[Mutual] Sending to ${targetAI}: ${otherAIs.join('+')} responses + prompt`);
+    log(`[互评] 发送给 ${targetAI}: ${otherAIs.join('+')} 的回复 + 提示`);
     await sendToAI(targetAI, evalMessage);
   }
 
-  log(`[Mutual] Complete! All ${participants.length} AIs received cross-evaluations`, 'success');
+  log(`[互评] 完成！${participants.length} 个 AI 已收到交叉评价`, 'success');
 }
 
 async function getLatestResponse(aiType) {
@@ -428,9 +617,9 @@ async function sendToAI(aiType, message) {
       { type: 'SEND_MESSAGE', aiType, message },
       (response) => {
         if (response?.success) {
-          log(`Sent to ${aiType}`, 'success');
+          log(`已发送至 ${aiType}`, 'success');
         } else {
-          log(`Failed to send to ${aiType}: ${response?.error || 'Unknown error'}`, 'error');
+          log(`发送至 ${aiType} 失败: ${response?.error || 'Unknown error'}`, 'error');
         }
         resolve(response);
       }
@@ -449,79 +638,113 @@ function log(message, type = 'info') {
     second: '2-digit'
   });
 
-  entry.innerHTML = `<span class="time">${time}</span>${message}`;
+  entry.innerHTML = `<span class="time"></span><span class="msg"></span>`;
+  entry.querySelector('.time').textContent = time;
+  entry.querySelector('.msg').textContent = message;
   logContainer.insertBefore(entry, logContainer.firstChild);
 
-  // Keep only last 50 entries
   while (logContainer.children.length > 50) {
     logContainer.removeChild(logContainer.lastChild);
   }
 }
 
 // ============================================
-// Discussion Mode Functions
+// Connection Status
 // ============================================
 
-function setupDiscussionMode() {
-  // Mode switcher buttons
-  document.getElementById('mode-normal').addEventListener('click', () => switchMode('normal'));
-  document.getElementById('mode-discussion').addEventListener('click', () => switchMode('discussion'));
+// Registered synchronously at boot (before any await) so boot-time broadcasts
+// from background — e.g. TAB_STATUS_UPDATE / RESPONSE_CAPTURED — are not missed.
+function setupMessageListener() {
+  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message.type === 'TAB_STATUS_UPDATE') {
+      updateTabStatus(message.aiType, message.connected);
+    } else if (message.type === 'RESPONSE_CAPTURED') {
+      log(`${message.aiType}: 已捕获回复`, 'success');
+      if (discussionState.active && discussionState.pendingResponses.has(message.aiType)) {
+        handleDiscussionResponse(message.aiType, message.content);
+      }
+    } else if (message.type === 'SEND_RESULT') {
+      if (message.success) {
+        log(`${message.aiType}: 消息已发送`, 'success');
+      } else {
+        log(`${message.aiType}: 失败 - ${message.error}`, 'error');
+      }
+    }
+  });
+}
 
-  // Discussion controls
-  document.getElementById('start-discussion-btn').addEventListener('click', startDiscussion);
+async function checkConnectedTabs() {
+  try {
+    const tabs = await chrome.tabs.query({});
+
+    for (const tab of tabs) {
+      const aiType = getAITypeFromUrl(tab.url);
+      if (aiType) {
+        connectedTabs[aiType] = tab.id;
+        updateTabStatus(aiType, true);
+      }
+    }
+  } catch (err) {
+    log('检查标签页出错: ' + err.message, 'error');
+  }
+}
+
+function getAITypeFromUrl(url) {
+  if (!url) return null;
+  if (url.includes('claude.ai')) return 'claude';
+  if (url.includes('chat.openai.com') || url.includes('chatgpt.com')) return 'chatgpt';
+  if (url.includes('gemini.google.com')) return 'gemini';
+  if (url.includes('chat.deepseek.com')) return 'deepseek';
+  return null;
+}
+
+function updateTabStatus(aiType, connected) {
+  if (connected) connectedTabs[aiType] = true;
+  // Reflect status on the dropdown brand dots (target + source menus)
+  if (ddTarget) ddTarget.setStatus(aiType, connected);
+  if (ddSource) ddSource.setStatus(aiType, connected);
+}
+
+// ============================================
+// Discussion Mode
+// ============================================
+
+function setupDiscussionControls() {
   document.getElementById('next-round-btn').addEventListener('click', nextRound);
   document.getElementById('end-discussion-btn').addEventListener('click', endDiscussion);
   document.getElementById('generate-summary-btn').addEventListener('click', generateSummary);
   document.getElementById('new-discussion-btn').addEventListener('click', resetDiscussion);
   document.getElementById('interject-btn').addEventListener('click', handleInterject);
-
-  // Participant selection validation
-  document.querySelectorAll('input[name="participant"]').forEach(checkbox => {
-    checkbox.addEventListener('change', validateParticipants);
-  });
 }
 
-function switchMode(mode) {
-  const normalMode = document.getElementById('normal-mode');
-  const discussionMode = document.getElementById('discussion-mode');
-  const normalBtn = document.getElementById('mode-normal');
-  const discussionBtn = document.getElementById('mode-discussion');
+function lockComposerForDiscussion(locked) {
+  ddMode.setDisabled(locked);
+  ddTarget.setDisabled(locked);
+  ddAction.setDisabled(locked);
+  messageInput.disabled = locked;
+  sendBtn.disabled = locked;
+  addFileBtn.disabled = locked;
+}
 
-  if (mode === 'normal') {
-    normalMode.classList.remove('hidden');
-    discussionMode.classList.add('hidden');
-    normalBtn.classList.add('active');
-    discussionBtn.classList.remove('active');
-  } else {
-    normalMode.classList.add('hidden');
-    discussionMode.classList.remove('hidden');
-    normalBtn.classList.remove('active');
-    discussionBtn.classList.add('active');
+async function startDiscussionFromComposer() {
+  if (discussionState.active) {
+    log('讨论进行中，请使用下方控制面板，或先结束当前讨论', 'error');
+    return;
   }
-}
 
-function validateParticipants() {
-  const selected = document.querySelectorAll('input[name="participant"]:checked');
-  const startBtn = document.getElementById('start-discussion-btn');
-  startBtn.disabled = selected.length !== 2;
-}
+  const topic = messageInput.value.trim();
+  const selected = ddTarget.getSelected();
 
-async function startDiscussion() {
-  const topic = document.getElementById('discussion-topic').value.trim();
+  if (selected.length !== 2) {
+    log('讨论需要正好选择 2 位参与者', 'error');
+    return;
+  }
   if (!topic) {
     log('请输入讨论主题', 'error');
     return;
   }
 
-  const selected = Array.from(document.querySelectorAll('input[name="participant"]:checked'))
-    .map(cb => cb.value);
-
-  if (selected.length !== 2) {
-    log('请选择 2 位参与者', 'error');
-    return;
-  }
-
-  // Initialize discussion state
+  if (discussionState.summaryTimer) clearInterval(discussionState.summaryTimer);
   discussionState = {
     active: true,
     topic: topic,
@@ -529,25 +752,28 @@ async function startDiscussion() {
     currentRound: 1,
     history: [],
     pendingResponses: new Set(selected),
-    roundType: 'initial'
+    roundType: 'initial',
+    summaryTimer: null
   };
 
-  // Update UI
-  document.getElementById('discussion-setup').classList.add('hidden');
-  document.getElementById('discussion-active').classList.remove('hidden');
+  messageInput.value = '';
+  resetComposerHeight();
+  lockComposerForDiscussion(true);
+
+  // Show discussion panel
+  discussionSummary.classList.add('hidden');
+  discussionPanel.classList.remove('hidden');
   document.getElementById('round-badge').textContent = '第 1 轮';
   document.getElementById('participants-badge').textContent =
-    `${capitalize(selected[0])} vs ${capitalize(selected[1])}`;
+    `${AI_META[selected[0]].name} vs ${AI_META[selected[1]].name}`;
   document.getElementById('topic-display').textContent = topic;
-  updateDiscussionStatus('waiting', `等待 ${selected.join(' 和 ')} 的初始回复...`);
+  updateDiscussionStatus('waiting', `等待 ${selected.map(s => AI_META[s].name).join(' 和 ')} 的初始回复...`);
 
-  // Disable buttons during round
   document.getElementById('next-round-btn').disabled = true;
   document.getElementById('generate-summary-btn').disabled = true;
 
   log(`讨论开始: ${selected.join(' vs ')}`, 'success');
 
-  // Send topic to both AIs
   for (const ai of selected) {
     await sendToAI(ai, `Please share your thoughts on the following topic:\n\n${topic}`);
   }
@@ -556,7 +782,6 @@ async function startDiscussion() {
 function handleDiscussionResponse(aiType, content) {
   if (!discussionState.active) return;
 
-  // Record this response in history
   discussionState.history.push({
     round: discussionState.currentRound,
     ai: aiType,
@@ -564,12 +789,10 @@ function handleDiscussionResponse(aiType, content) {
     content: content
   });
 
-  // Remove from pending
   discussionState.pendingResponses.delete(aiType);
 
   log(`讨论: ${aiType} 已回复 (第 ${discussionState.currentRound} 轮)`, 'success');
 
-  // Check if all pending responses received
   if (discussionState.pendingResponses.size === 0) {
     onRoundComplete();
   } else {
@@ -579,38 +802,37 @@ function handleDiscussionResponse(aiType, content) {
 }
 
 function onRoundComplete() {
+  // During summary generation the poller (generateSummary) owns the terminal
+  // transition to showSummary — don't flash a "round complete" status or
+  // re-enable round controls for the summary responses.
+  if (discussionState.roundType === 'summary') return;
+
   log(`第 ${discussionState.currentRound} 轮完成`, 'success');
   updateDiscussionStatus('ready', `第 ${discussionState.currentRound} 轮完成，可以进入下一轮`);
 
-  // Enable next round button
   document.getElementById('next-round-btn').disabled = false;
   document.getElementById('generate-summary-btn').disabled = false;
 }
 
 async function nextRound() {
-  discussionState.currentRound++;
   const [ai1, ai2] = discussionState.participants;
 
-  // Update UI
-  document.getElementById('round-badge').textContent = `第 ${discussionState.currentRound} 轮`;
-  document.getElementById('next-round-btn').disabled = true;
-  document.getElementById('generate-summary-btn').disabled = true;
-
-  // Get previous round responses
-  const prevRound = discussionState.currentRound - 1;
-  const ai1Response = discussionState.history.find(
-    h => h.round === prevRound && h.ai === ai1
-  )?.content;
-  const ai2Response = discussionState.history.find(
-    h => h.round === prevRound && h.ai === ai2
-  )?.content;
+  // Read the just-completed round's responses BEFORE mutating any UI/state,
+  // so a missing-response abort leaves the panel usable (buttons stay enabled).
+  const prevRound = discussionState.currentRound;
+  const ai1Response = discussionState.history.find(h => h.round === prevRound && h.ai === ai1)?.content;
+  const ai2Response = discussionState.history.find(h => h.round === prevRound && h.ai === ai2)?.content;
 
   if (!ai1Response || !ai2Response) {
     log('缺少上一轮的回复', 'error');
     return;
   }
 
-  // Set pending responses
+  discussionState.currentRound++;
+  document.getElementById('round-badge').textContent = `第 ${discussionState.currentRound} 轮`;
+  document.getElementById('next-round-btn').disabled = true;
+  document.getElementById('generate-summary-btn').disabled = true;
+
   discussionState.pendingResponses = new Set([ai1, ai2]);
   discussionState.roundType = 'cross-eval';
 
@@ -618,8 +840,6 @@ async function nextRound() {
 
   log(`第 ${discussionState.currentRound} 轮: 交叉评价开始`);
 
-  // Send cross-evaluation requests
-  // AI1 evaluates AI2's response
   const msg1 = `Here is ${capitalize(ai2)}'s response to the topic "${discussionState.topic}":
 
 <${ai2}_response>
@@ -628,7 +848,6 @@ ${ai2Response}
 
 Please evaluate this response. What do you agree with? What do you disagree with? What would you add or change?`;
 
-  // AI2 evaluates AI1's response
   const msg2 = `Here is ${capitalize(ai1)}'s response to the topic "${discussionState.topic}":
 
 <${ai1}_response>
@@ -662,7 +881,6 @@ async function handleInterject() {
 
   log(`[插话] 正在获取双方最新回复...`);
 
-  // Get latest responses from both participants
   const ai1Response = await getLatestResponse(ai1);
   const ai2Response = await getLatestResponse(ai2);
 
@@ -674,7 +892,6 @@ async function handleInterject() {
 
   log(`[插话] 已获取双方回复，正在发送...`);
 
-  // Send to AI1: user message + AI2's response
   const msg1 = `${message}
 
 以下是 ${capitalize(ai2)} 的最新回复：
@@ -683,7 +900,6 @@ async function handleInterject() {
 ${ai2Response}
 </${ai2}_response>`;
 
-  // Send to AI2: user message + AI1's response
   const msg2 = `${message}
 
 以下是 ${capitalize(ai1)} 的最新回复：
@@ -697,18 +913,17 @@ ${ai1Response}
 
   log(`[插话] 已发送给双方（含对方回复）`, 'success');
 
-  // Clear input
   input.value = '';
   btn.disabled = false;
 }
 
 async function generateSummary() {
   document.getElementById('generate-summary-btn').disabled = true;
+  document.getElementById('next-round-btn').disabled = true;
   updateDiscussionStatus('waiting', '正在请求双方生成总结...');
 
   const [ai1, ai2] = discussionState.participants;
 
-  // Build conversation history for summary
   let historyText = `主题: ${discussionState.topic}\n\n`;
 
   for (let round = 1; round <= discussionState.currentRound; round++) {
@@ -728,42 +943,51 @@ async function generateSummary() {
 讨论历史：
 ${historyText}`;
 
-  // Send to both AIs
   discussionState.roundType = 'summary';
   discussionState.pendingResponses = new Set([ai1, ai2]);
 
-  log(`[Summary] 正在请求双方生成总结...`);
+  log(`[总结] 正在请求双方生成总结...`);
   await sendToAI(ai1, summaryPrompt);
   await sendToAI(ai2, summaryPrompt);
 
-  // Wait for both responses, then show summary
-  const checkForSummary = setInterval(async () => {
+  // Poll until both summaries are captured. Guards prevent throwing or polling
+  // forever if the discussion is reset, or a capture never arrives.
+  let ticks = 0;
+  const maxTicks = 1200; // 1200 × 500ms = 10 min, matches capture max wait
+  const checkForSummary = setInterval(() => {
+    ticks++;
+    if (discussionState.roundType !== 'summary' || discussionState.participants.length !== 2) {
+      clearInterval(checkForSummary);
+      return;
+    }
     if (discussionState.pendingResponses.size === 0) {
       clearInterval(checkForSummary);
-
-      // Get both summaries
       const summaries = discussionState.history.filter(h => h.type === 'summary');
       const ai1Summary = summaries.find(s => s.ai === ai1)?.content || '';
       const ai2Summary = summaries.find(s => s.ai === ai2)?.content || '';
-
-      log(`[Summary] 双方总结已生成`, 'success');
+      log(`[总结] 双方总结已生成`, 'success');
       showSummary(ai1Summary, ai2Summary);
+    } else if (ticks >= maxTicks) {
+      clearInterval(checkForSummary);
+      log('[总结] 等待超时，未收到双方完整总结', 'error');
+      updateDiscussionStatus('ready', '总结等待超时，可重试或结束讨论');
+      document.getElementById('generate-summary-btn').disabled = false;
+      document.getElementById('next-round-btn').disabled = false;
     }
   }, 500);
+  discussionState.summaryTimer = checkForSummary;
 }
 
 function showSummary(ai1Summary, ai2Summary) {
-  document.getElementById('discussion-active').classList.add('hidden');
-  document.getElementById('discussion-summary').classList.remove('hidden');
+  discussionPanel.classList.add('hidden');
+  discussionSummary.classList.remove('hidden');
 
   const [ai1, ai2] = discussionState.participants;
 
-  // Handle empty summaries
   if (!ai1Summary && !ai2Summary) {
     log('警告: 未收到 AI 的总结内容', 'error');
   }
 
-  // Build summary HTML - show both summaries side by side conceptually
   let html = `<div class="round-summary">
     <h4>双方总结对比</h4>
     <div class="summary-comparison">
@@ -778,7 +1002,6 @@ function showSummary(ai1Summary, ai2Summary) {
     </div>
   </div>`;
 
-  // Add round-by-round history
   html += `<div class="round-summary"><h4>完整讨论历史</h4>`;
   for (let round = 1; round <= discussionState.currentRound; round++) {
     const roundEntries = discussionState.history.filter(h => h.round === round && h.type !== 'summary');
@@ -797,6 +1020,11 @@ function showSummary(ai1Summary, ai2Summary) {
 
   document.getElementById('summary-content').innerHTML = html;
   discussionState.active = false;
+  // Summary is terminal — free the composer so the user can keep working while
+  // reading it. The 新讨论 button clears the summary when they're done.
+  lockComposerForDiscussion(false);
+  ddMode.setValue('normal');
+  applyMode('normal');
   log('讨论总结已生成', 'success');
 }
 
@@ -807,6 +1035,7 @@ function endDiscussion() {
 }
 
 function resetDiscussion() {
+  if (discussionState.summaryTimer) clearInterval(discussionState.summaryTimer);
   discussionState = {
     active: false,
     topic: '',
@@ -814,16 +1043,18 @@ function resetDiscussion() {
     currentRound: 0,
     history: [],
     pendingResponses: new Set(),
-    roundType: null
+    roundType: null,
+    summaryTimer: null
   };
 
-  // Reset UI
-  document.getElementById('discussion-setup').classList.remove('hidden');
-  document.getElementById('discussion-active').classList.add('hidden');
-  document.getElementById('discussion-summary').classList.add('hidden');
-  document.getElementById('discussion-topic').value = '';
+  discussionPanel.classList.add('hidden');
+  discussionSummary.classList.add('hidden');
   document.getElementById('next-round-btn').disabled = true;
   document.getElementById('generate-summary-btn').disabled = true;
+
+  lockComposerForDiscussion(false);
+  ddMode.setValue('normal');
+  applyMode('normal');
 
   log('讨论已结束');
 }
@@ -845,7 +1076,7 @@ function escapeHtml(text) {
 }
 
 // ============================================
-// File Upload Functions
+// File Upload
 // ============================================
 
 function setupFileUpload() {
@@ -854,18 +1085,16 @@ function setupFileUpload() {
   fileInput.addEventListener('change', (e) => {
     const files = Array.from(e.target.files);
     files.forEach(file => addFile(file));
-    fileInput.value = ''; // Reset for next selection
+    fileInput.value = '';
   });
 }
 
 function addFile(file) {
-  // Check file size (max 10MB)
   if (file.size > 10 * 1024 * 1024) {
     log(`文件 ${file.name} 超过 10MB 限制`, 'error');
     return;
   }
 
-  // Check for duplicates
   if (selectedFiles.some(f => f.name === file.name && f.size === file.size)) {
     return;
   }
@@ -885,11 +1114,17 @@ function renderFileList() {
   selectedFiles.forEach((file, index) => {
     const item = document.createElement('div');
     item.className = 'file-item';
-    item.innerHTML = `
-      <span class="file-name" title="${file.name}">${file.name}</span>
-      <button class="remove-file" title="移除">&times;</button>
-    `;
-    item.querySelector('.remove-file').addEventListener('click', () => removeFile(index));
+    const nameSpan = document.createElement('span');
+    nameSpan.className = 'file-name';
+    nameSpan.title = file.name;
+    nameSpan.textContent = file.name;
+    const removeBtn = document.createElement('button');
+    removeBtn.className = 'remove-file';
+    removeBtn.title = '移除';
+    removeBtn.innerHTML = '&times;';
+    removeBtn.addEventListener('click', () => removeFile(index));
+    item.appendChild(nameSpan);
+    item.appendChild(removeBtn);
     fileList.appendChild(item);
   });
 }
