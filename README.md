@@ -1,84 +1,16 @@
 # AI 圆桌 (AI Roundtable)
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Status: Experimental](https://img.shields.io/badge/Status-Experimental-orange.svg)](#-experimental-prototype--实验性原型)
-
 > 让多个 AI 助手围桌讨论，交叉评价，深度协作
 
 一个 Chrome 扩展，让你像"会议主持人"一样，同时操控多个 AI（Claude、ChatGPT、Gemini、DeepSeek），实现真正的 AI 圆桌会议。还支持让**单个 AI 扮演多个内置角色**自我互评。
 
-<!-- TODO: 添加 GIF 演示 -->
-<!-- ![Demo GIF](assets/demo.gif) -->
+<p align="center">
+  <img src="assets/screenshots/01-overview.png" alt="AI 圆桌整体效果：侧边栏 + 多个 AI 页面并排" width="820">
+</p>
 
 ---
 
-## 🔬 Experimental Prototype / 实验性原型
-
-**EN**
-
-This is an **experimental prototype** built to validate a working method:
-
-> **Ask the same question to multiple models, let them debate each other, and use the friction to expose blind spots and expand thinking.**
-
-It is **not** a production-ready tool, nor an attempt to compete with AI aggregators or workflow platforms.
-Think of it as a *runnable experiment* rather than a polished product.
-
-**中文**
-
-这是一个**实验性原型**，用于验证一种工作方式：
-
-> **同一个问题，让多个模型同时回答并互相辩论，用分歧与冲突逼出漏洞、拓展思路。**
-
-它**不是**一个生产级工具，也不是为了和任何 AI 聚合器或工作流产品竞争。
-你可以把它理解为：**一份可以直接运行的实验记录**。
-
----
-
-## 🎯 Non-goals / 刻意不做的事
-
-**EN**
-
-* No guarantee of long-term compatibility (AI web UIs change frequently)
-* No promise of ongoing maintenance or rapid fixes
-* No cloud backend, accounts, or data persistence
-* No complex workflow orchestration, exports, or template libraries
-* Not trying to support every model or platform
-
-The focus is validating the **roundtable workflow**, not building software for its own sake.
-
-**中文**
-
-* 不承诺长期兼容（AI 网页端结构随时可能变化）
-* 不保证持续维护或快速修复
-* 不做云端账号、数据存储或同步
-* 不做复杂的工作流编排、导出或模板库
-* 不追求覆盖所有模型或平台
-
-重点在于**验证"圆桌式思考流程"是否有价值**，而不是把软件本身做大做全。
-
----
-
-## ❓ Why this does NOT use APIs / 为什么不用 API
-
-**EN**
-
-This project intentionally operates on the **web UIs** (Claude / ChatGPT / Gemini / DeepSeek) instead of APIs.
-
-In practice, **API and web chat often behave differently** — commonly due to model variants, hidden system settings, sampling parameters, or UI-specific features.
-
-I'm currently most satisfied with, and calibrated to, the **web chat experience**, so this experiment stays on the web to validate the workflow under real conditions I actually use.
-
-**中文**
-
-这个项目刻意选择直接操作 **Claude / ChatGPT / Gemini / DeepSeek 的网页端**，而不是使用 API。
-
-在实际使用中，**API 和 Web 端的表现往往并不一致**，常见原因包括：模型版本差异、隐藏的系统设置、采样参数，以及网页端特有的交互能力。
-
-目前我对 **Web 端 Chat 的体验最熟悉、也最满意**，因此这次实验选择留在 Web 端，验证的是我真实使用场景下的思考流程，而不是 API 能力。
-
----
-
-## 核心特性
+## ✨ 核心特性
 
 - **统一控制台** — 通过 Chrome 侧边栏同时管理多个 AI，Claude 风格的浅色界面
 - **两种圆桌**（顶层「圆桌类型」下拉切换）：
@@ -141,7 +73,7 @@ I'm currently most satisfied with, and calibrated to, the **web chat experience*
 
 ---
 
-## 使用方法
+## 📖 使用方法
 
 侧边栏顶部是一个 Claude 风格的输入卡片，底部一排下拉控制：
 
@@ -150,10 +82,18 @@ I'm currently most satisfied with, and calibrated to, the **web chat experience*
  [对象 ▾] [圆桌类型 ▾] [玩法 ▾] …                         ➤
 ```
 
+<p align="center">
+  <img src="assets/screenshots/02-panel.png" alt="侧边栏控制台：输入卡片 + 底部下拉控制栏" width="360">
+</p>
+
 - **圆桌类型**：在 **AI 圆桌** 与 **角色圆桌** 之间切换（两者同级）。
 - 选 **AI 圆桌** 时，出现「玩法」下拉；选 **角色圆桌** 时，出现「嘉宾 / 讨论模式 / 发言轮次」下拉。
 
 ### AI 圆桌
+
+<p align="center">
+  <img src="assets/screenshots/03-ai-roundtable.png" alt="AI 圆桌：对象与玩法下拉（含连接状态）" width="360">
+</p>
 
 **对象**：多选下拉，选择要参与的 AI；下拉里实时显示每个 AI 的连接状态，未连接的不可选。
 
@@ -178,6 +118,10 @@ I'm currently most satisfied with, and calibrated to, the **web chat experience*
   ```
 
 ### 角色圆桌（单 AI 多角色）
+
+<p align="center">
+  <img src="assets/screenshots/04-role-roundtable.png" alt="角色圆桌：嘉宾/讨论模式/轮次配置与多角色发言" width="360">
+</p>
 
 让**一个 AI** 依次扮演多个内置角色，围绕同一话题互评：
 
@@ -205,46 +149,7 @@ I'm currently most satisfied with, and calibrated to, the **web chat experience*
 
 ---
 
-## 技术架构
-
-三个进程边界，仅通过 `chrome.runtime.sendMessage` 通信：
-
-```
-sidepanel/panel.js  <──>  background.js (SW)  <──>  content/{claude,chatgpt,gemini,deepseek}.js
-      (UI · 状态)          (消息路由 · 缓存)         (按 AI 注入 DOM · 捕获回复)
-```
-
-```
-ai-roundtable/
-├── manifest.json           # Chrome 扩展配置 (Manifest V3)
-├── background.js           # Service Worker，消息路由 + 会话缓存
-├── sidepanel/
-│   ├── panel.html          # 侧边栏 UI
-│   ├── panel.css           # 样式（Claude 风格浅色主题）
-│   └── panel.js            # 全部 UI 状态与命令解析
-├── content/
-│   ├── claude.js           # Claude 页面注入脚本
-│   ├── chatgpt.js          # ChatGPT 页面注入脚本
-│   ├── gemini.js           # Gemini 页面注入脚本
-│   └── deepseek.js         # DeepSeek 页面注入脚本
-└── icons/                  # 扩展图标
-```
-
-无构建步骤、无依赖：「开发」即在 `chrome://extensions/` 重新加载未打包扩展，并刷新目标 AI 标签页。
-
----
-
-## 隐私说明
-
-- **不上传任何内容** — 扩展完全在本地运行，不向任何服务器发送数据
-- **无遥测 / 日志采集** — 不收集使用数据、不追踪行为
-- **数据存储位置** — 仅使用浏览器本地存储（`chrome.storage`）
-- **无第三方服务** — 不依赖任何外部 API 或服务
-- **如何删除数据** — 卸载扩展即可完全清除，或在 Chrome 扩展设置中清除存储
-
----
-
-## 常见问题
+## ❓ 常见问题
 
 ### Q: 安装或更新后无法连接 AI 页面？
 **A:** 内容脚本只会自动注入到扩展加载之后打开的页面。安装 / 更新 / 重载扩展后，请**刷新已打开的 AI 标签页**。「对象」下拉里会实时显示连接状态。
@@ -260,31 +165,13 @@ ai-roundtable/
 
 ---
 
-## 已知限制
+## ⚠️ 已知限制
 
-- 依赖各 AI 平台的 DOM 结构，平台更新可能导致功能失效（按 `content/<ai>.js` 单独修复）
+- 依赖各 AI 平台的 DOM 结构，平台更新可能导致功能失效
 - 讨论模式固定 2 个参与者
 - 角色圆桌为单 AI 顺序发言，多角色 + 多轮时整体耗时较长
 - 不支持 Claude Artifacts、ChatGPT Canvas 等特殊功能
 - 不含文件上传功能
-
----
-
-## Contributing
-
-Contributions welcome (low-maintenance project):
-
-- Reproducible bug reports (input + output + steps + environment)
-- Documentation improvements
-- Small PRs (fixes/docs)
-
-> **Note:** Feature requests may not be acted on due to limited maintenance capacity.
-
----
-
-## License
-
-MIT License - see [LICENSE](LICENSE) for details.
 
 ---
 
