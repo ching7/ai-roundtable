@@ -14,7 +14,7 @@
 
 - **统一控制台** — 通过 Chrome 侧边栏同时管理多个 AI，Claude 风格的浅色界面
 - **两种圆桌**（顶层「圆桌类型」下拉切换）：
-  - **AI 圆桌** — 多个真实 AI（Claude / ChatGPT / Gemini / DeepSeek）协作，含 4 种玩法：普通发送 / 互评 / 交叉引用 / 讨论
+  - **AI 圆桌** — 多个真实 AI（Claude / ChatGPT / Gemini / DeepSeek）协作，含 5 种玩法：普通发送 / 互评 / 交叉引用 / 讨论 / 总结
   - **角色圆桌** — 单个 AI 依次扮演多个内置角色，围绕话题多轮互评（8 个角色，3 种讨论风格，1–3 轮）
 - **下拉式交互** — 对象、玩法、动作、嘉宾、风格、轮次均为底部栏下拉，风格统一
 - **连接状态感知** — 「对象」下拉实时显示各 AI 是否已连接（在线 / 未连接），未连接的自动置灰且不可选
@@ -31,7 +31,8 @@
 2. **互评 / mutual**：互相挑刺，逼出前提
 3. **交叉引用**：由你决定谁审谁，两方围攻一方做压力测试
 4. **讨论**：只在需要时进行两 AI 多轮辩论
-5. **角色圆桌**：手头只有一个 AI 时，让它用多个角色（批判 / 落地 / 风险 …）自我审视
+5. **总结**：指定一个 AI（取「对象」里第一个）把整场圆桌的多方回复收拢成主持人式结论
+6. **角色圆桌**：手头只有一个 AI 时，让它用多个角色（批判 / 落地 / 风险 …）自我审视
 
 **EN**
 
@@ -39,7 +40,8 @@
 2. **Mutual** — Let models critique each other (expose assumptions)
 3. **Cross-reference** — You decide who audits whom; pressure-test one conclusion
 4. **Discussion** — Run two-model multi-round debates only when needed
-5. **Role roundtable** — With a single model, have it self-review through multiple roles
+5. **Summary** — Have one AI (the first selected target) distill the whole roundtable into a host-style conclusion
+6. **Role roundtable** — With a single model, have it self-review through multiple roles
 
 ---
 
@@ -116,6 +118,7 @@
   ...
   生成总结: 双方各自总结讨论
   ```
+- **总结** — 指定**一个** AI（取「对象」里**第一个**选中项，可为任意已连接 AI）对整场圆桌内容做主持人式总结：在「对象」选好参与者后点「发送」即可。输出为「主持人总结 + 完整讨论记录」，样式与角色圆桌一致。若有进行中的讨论，则总结其多轮转录；否则总结所选各方的最新回复。
 
 ### 角色圆桌（单 AI 多角色）
 
