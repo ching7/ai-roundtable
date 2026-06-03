@@ -680,7 +680,8 @@ body {
 }
 
 #summary-content,
-#role-summary-content {
+#role-summary-content,
+#ai-summary-content {
   background: var(--bg-sunken);
   padding: 14px;
   border-radius: 12px;
@@ -693,7 +694,8 @@ body {
 }
 
 #summary-content h4,
-#role-summary-content h4 {
+#role-summary-content h4,
+#ai-summary-content h4 {
   color: var(--text-primary);
   margin-bottom: 8px;
   font-size: 13.5px;
@@ -701,14 +703,16 @@ body {
 }
 
 #summary-content .round-summary,
-#role-summary-content .round-summary {
+#role-summary-content .round-summary,
+#ai-summary-content .round-summary {
   margin-bottom: 14px;
   padding-bottom: 14px;
   border-bottom: 1px solid var(--border);
 }
 
 #summary-content .round-summary:last-child,
-#role-summary-content .round-summary:last-child {
+#role-summary-content .round-summary:last-child,
+#ai-summary-content .round-summary:last-child {
   border-bottom: none;
   margin-bottom: 0;
   padding-bottom: 0;
@@ -741,7 +745,8 @@ body {
 
 /* ========== ROLE ROUNDTABLE ========== */
 /* Role transcript (rendered into #role-summary-content) */
-#role-summary-content .role-turn {
+#role-summary-content .role-turn,
+#ai-summary-content .role-turn {
   margin: 8px 0;
   padding: 10px 12px;
   background: var(--bg-card);
@@ -749,7 +754,8 @@ body {
   border-radius: 10px;
 }
 
-#role-summary-content .role-turn-name {
+#role-summary-content .role-turn-name,
+#ai-summary-content .role-turn-name {
   font-weight: 600;
   font-size: 12px;
   margin-bottom: 5px;

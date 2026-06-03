@@ -30,7 +30,8 @@ const MODE_OPTIONS = [
   { value: 'normal', label: '普通发送' },
   { value: 'mutual', label: '互评' },
   { value: 'cross', label: '交叉引用' },
-  { value: 'discussion', label: '讨论' }
+  { value: 'discussion', label: '讨论' },
+  { value: 'summary', label: '总结' }
 ];
 
 // ===== Role roundtable (single AI plays multiple built-in roles) =====
@@ -82,6 +83,7 @@ const MODE_PLACEHOLDERS = {
   mutual: '互评提示（可留空，默认让各方互相评价）…',
   cross: '附加提示（可留空）…',
   discussion: '输入讨论主题…（需在“对象”中选择 2 位参与者）',
+  summary: '总结模式：在「对象」中选择参与者，第一个作为总结者；点发送生成总结',
   role: '输入讨论话题…例如：微服务拆分的最佳实践'
 };
 
@@ -90,6 +92,7 @@ const SEND_TITLES = {
   mutual: '发送互评',
   cross: '发送交叉引用',
   discussion: '开始讨论',
+  summary: '总结',
   role: '开始圆桌讨论'
 };
 
@@ -104,6 +107,7 @@ const roleActive = document.getElementById('role-active');
 const roleSummaryPanel = document.getElementById('role-summary');
 const startRoleBtn = document.getElementById('start-role-btn');
 const roleControls = document.getElementById('role-controls');
+const aiSummaryPanel = document.getElementById('ai-summary');
 
 // Dropdown controllers (assigned in setupDropdowns)
 let ddTarget = null;
@@ -143,6 +147,13 @@ let roleState = {
   summaryTimer: null   // summary capture timeout
 };
 
+// AI 圆桌 Summary State (single designated AI summarizes the roundtable)
+let summaryState = {
+  awaiting: false,  // summary prompt sent, waiting for capture
+  ai: null,         // the AI designated to summarize
+  turns: [],        // [{label, content}] gathered transcript, reused at render time
+  timer: null       // capture timeout handle
+};
 
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
@@ -152,6 +163,7 @@ document.addEventListener('DOMContentLoaded', () => {
   setupComposer();
   setupDiscussionControls();
   setupRoleRoundtable();
+  setupSummaryControls();
   applyMode();
 });
 
@@ -456,6 +468,8 @@ function applyMode() {
   // show* functions reveal their panel after calling applyMode.)
   discussionPanel.classList.add('hidden');
   discussionSummary.classList.add('hidden');
+  aiSummaryPanel.classList.add('hidden');
+  resetSummaryState();
   setComposerAction(isRole ? 'role-setup' : 'ai');
   if (ddTarget) ddTarget.setSingleSelect(isRole);
 
@@ -504,6 +518,11 @@ async function handleSend() {
   if (mode === 'role') {
     // Enter in 角色圆桌 mode starts the roundtable (the 开始 button does the same).
     await startRoleRoundtable();
+    return;
+  }
+
+  if (mode === 'summary') {
+    await generateAISummary();
     return;
   }
 
@@ -823,7 +842,9 @@ function setupMessageListener() {
       refreshConnections();
     } else if (message.type === 'RESPONSE_CAPTURED') {
       log(`${message.aiType}: 已捕获回复`, 'success');
-      if (discussionState.active && discussionState.pendingResponses.has(message.aiType)) {
+      if (summaryState.awaiting && message.aiType === summaryState.ai) {
+        handleAISummaryResponse(message.content);
+      } else if (discussionState.active && discussionState.pendingResponses.has(message.aiType)) {
         handleDiscussionResponse(message.aiType, message.content);
       } else if (roleState.active && roleState.awaitingRole && message.aiType === roleState.ai) {
         handleRoleResponse(message.content);
@@ -856,6 +877,21 @@ async function refreshConnections() {
   } catch (err) {
     log('检查连接出错: ' + err.message, 'error');
   }
+}
+
+// 当前已连接的 AI 集合(复用 URL 匹配)。
+async function getConnectedAISet() {
+  try {
+    const tabs = await chrome.tabs.query({});
+    return new Set(tabs.map(t => getAITypeFromUrl(t.url)).filter(Boolean));
+  } catch (err) {
+    return new Set();
+  }
+}
+
+// One-off connection check for the chosen summarizer (reuses URL matching).
+async function isAIConnected(aiType) {
+  return (await getConnectedAISet()).has(aiType);
 }
 
 function getAITypeFromUrl(url) {
@@ -1238,6 +1274,146 @@ function escapeHtml(text) {
   const div = document.createElement('div');
   div.textContent = text;
   return div.innerHTML;
+}
+
+// ============================================
+// AI 圆桌 Summary (designate one AI to summarize the roundtable)
+// ============================================
+
+function resetSummaryState() {
+  if (summaryState.awaiting) sendBtn.disabled = false;
+  clearTimeout(summaryState.timer);
+  summaryState = { awaiting: false, ai: null, turns: [], timer: null };
+}
+
+function aiName(ai) {
+  return AI_META[ai] ? AI_META[ai].name : ai;
+}
+
+function setupSummaryControls() {
+  document.getElementById('ai-summary-close-btn').addEventListener('click', () => {
+    aiSummaryPanel.classList.add('hidden');
+  });
+}
+
+// Collect what to summarize. Active discussion → full multi-round transcript;
+// otherwise → each selected (or all connected) AI's latest live response.
+async function gatherSummaryContent() {
+  const turns = [];
+
+  if (discussionState.active && discussionState.history.length > 0) {
+    for (const entry of discussionState.history) {
+      if (entry.type === 'summary') continue;
+      const name = aiName(entry.ai);
+      turns.push({ label: `第 ${entry.round} 轮 · ${name}`, content: entry.content });
+    }
+  } else {
+    let aiList = ddTarget.getSelected();
+    if (aiList.length === 0) {
+      // 回退为全部「已连接」AI(而非全部 AI),避免纳入已关闭标签页的过期缓存响应
+      const connected = await getConnectedAISet();
+      aiList = AI_TYPES.filter(a => connected.has(a));
+    }
+    for (const ai of aiList) {
+      const content = await getLatestResponse(ai);
+      if (content && content.trim().length > 0) {
+        const name = aiName(ai);
+        turns.push({ label: name, content });
+      }
+    }
+  }
+
+  const transcript = turns.map(t => `${t.label}:\n${t.content}`).join('\n\n');
+  return { turns, transcript };
+}
+
+function buildSummaryPrompt(transcript) {
+  let header = '以下是一场 AI 圆桌讨论的完整记录';
+  if (discussionState.active && discussionState.topic) {
+    header += `（主题:${discussionState.topic}）`;
+  }
+  return `${header}：
+
+${transcript}
+
+请你以中立主持人的身份，对这场讨论做总结，包含：
+1. 主要共识点
+2. 主要分歧点
+3. 各方的核心观点
+4. 综合结论`;
+}
+
+async function generateAISummary() {
+  const selected = ddTarget.getSelected();
+  if (selected.length === 0) { log('请在「对象」中至少选择一个 AI(第一个作为总结者)', 'error'); return; }
+  const summarizer = selected[0];
+
+  if (!(await isAIConnected(summarizer))) {
+    const name = aiName(summarizer);
+    log(`${name} 未连接，请打开其标签页或改选其他 AI`, 'error');
+    return;
+  }
+
+  // Round guard: never summarize while a discussion round is still awaiting a
+  // participant — the summary capture would steal that round's response.
+  if (discussionState.active && discussionState.pendingResponses.size > 0) {
+    log('讨论轮次进行中，请等本轮结束后再总结', 'error');
+    return;
+  }
+
+  const { turns, transcript } = await gatherSummaryContent();
+  if (turns.length === 0) {
+    log('没有可总结的内容，请先让 AI 产生回复', 'error');
+    return;
+  }
+
+  sendBtn.disabled = true;
+  const name = aiName(summarizer);
+  log(`[圆桌总结] 正在请求 ${name} 生成总结...`);
+
+  // Deliver first, then arm capture (same stale-capture guard as role mode).
+  const res = await sendToAI(summarizer, buildSummaryPrompt(transcript));
+  if (!res || !res.success) {
+    log('[圆桌总结] 总结请求发送失败', 'error');
+    sendBtn.disabled = false;
+    return;
+  }
+
+  clearTimeout(summaryState.timer);
+  summaryState = {
+    awaiting: true,
+    ai: summarizer,
+    turns,
+    timer: setTimeout(() => {
+      if (summaryState.awaiting) {
+        summaryState.awaiting = false;
+        log('[圆桌总结] 等待超时，未收到总结', 'error');
+        sendBtn.disabled = false;
+      }
+    }, ROLE_TURN_TIMEOUT_MS)
+  };
+}
+
+function handleAISummaryResponse(content) {
+  if (!summaryState.awaiting) return;
+  clearTimeout(summaryState.timer);
+  summaryState.awaiting = false;
+  log('[圆桌总结] 总结已生成', 'success');
+  showAISummary(content, summaryState.turns, summaryState.ai);
+  sendBtn.disabled = false;
+}
+
+// Render in the 角色圆桌 summary style: host summary + full transcript.
+function showAISummary(summary, turns, ai) {
+  const name = aiName(ai);
+  let html = `<div class="round-summary"><h4>主持人总结（${escapeHtml(name)}）</h4><div>${escapeHtml(summary).replace(/\n/g, '<br>')}</div></div>`;
+  html += `<div class="round-summary"><h4>完整讨论记录</h4>`;
+  turns.forEach(t => {
+    html += `<div class="role-turn"><div class="role-turn-name">${escapeHtml(t.label)}</div><div>${escapeHtml(t.content).replace(/\n/g, '<br>')}</div></div>`;
+  });
+  html += `</div>`;
+  document.getElementById('ai-summary-content').innerHTML = html;
+  aiSummaryPanel.classList.remove('hidden');
 }
 
 // ============================================
